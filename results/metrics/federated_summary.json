@@ -1,0 +1,14 @@
+{
+    "clients": 4,
+    "communication_rounds": 8,
+    "local_epochs": 1,
+    "batch_size": 16,
+    "client_sizes": {
+        "1": 7692,
+        "2": 5060,
+        "3": 3318,
+        "4": 1003
+    },
+    "best_validation_macro_auroc": 0.9095563255010142,
+    "best_checkpoint": "results/checkpoints/federated_best.pt"
+}

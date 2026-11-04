@@ -1,0 +1,7 @@
+{
+    "models_compared": 3,
+    "best_macro_auroc": "Baseline CNN",
+    "best_macro_f1": "Multi-Scale Residual CNN",
+    "lowest_hamming_loss": "Baseline CNN",
+    "best_subset_accuracy": "Federated Multi-Scale CNN (8 rounds)"
+}

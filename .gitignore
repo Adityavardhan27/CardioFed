@@ -1,0 +1,48 @@
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Dataset files
+data/raw/
+data/processed/
+data/processed_verified_backup/
+
+# Model checkpoints and large arrays
+*.pt
+*.pth
+*.ckpt
+*.npy
+*.npz
+
+# Generated ECG experiments
+results/examples/
+results/multirecord_digitization/
+results/multirecord_digitization_100/
+results/multirecord_prediction/
+results/multirecord_prediction_100/
+results/predictions/
+
+# Experiment checkpoints
+results/scheduler_experiment/checkpoints/
+
+# Temporary and empty files
+do
+*.log
+*.tmp
+
+# IDE
+.vscode/
+.idea/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Record-level prediction data
+results/metrics/misclassified_ecgs.csv
