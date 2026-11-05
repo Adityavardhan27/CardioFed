@@ -33,7 +33,7 @@ python smoke_test_preprocessing.py
 python smoke_test_model.py
 ```
 
-The preprocessing smoke test creates a small temporary metadata fixture. The model smoke test uses synthetic arrays and runs the centralized training loop; it does not require PTB-XL. It creates an isolated temporary directory using Python's `tempfile` module and automatically cleans it up when the test finishes.
+The preprocessing smoke test creates a small temporary metadata fixture. The model smoke test uses synthetic arrays and runs the centralized training loop; it does not require PTB-XL. It creates a uniquely named temporary folder under the operating system's temporary location (or the repository directory as a fallback) and removes it after the test finishes.
 
 ## 2. Obtain PTB-XL
 
