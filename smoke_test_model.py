@@ -21,5 +21,5 @@ os.makedirs("/tmp/fake_ptbxl", exist_ok=True)
 for n, a in dict(X=X, y=y, folds=folds).items(): np.save(f"/tmp/fake_ptbxl/{n}.npy", a)
 
 from src.train import train
-train(processed="/tmp/fake_ptbxl", epochs=4, out="/tmp/fake_results")
+train(processed="/tmp/fake_ptbxl", epochs=4, output="/tmp/fake_results")
 print("\nSMOKE TEST PASSED - pipeline works end to end")
