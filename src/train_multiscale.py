@@ -1,9 +1,19 @@
 
-"""Train CardioFed Multi-Scale Residual CNN with LR scheduling."""
+"""Train CardioFed Multi-Scale Residual CNN with LR scheduling.
+
+Running with the default arguments reproduces the primary multi-scale model
+(results/scheduler_experiment/checkpoints/multiscale_best.pt). Training on CPU
+with seed 42 is deterministic: an independent run
+(results/diagnostic/checkpoints/multiscale_best.pt) has identical weights.
+
+Refuses to start if the checkpoint or history already exists, unless
+--overwrite is given. Use --output to train into a new directory.
+"""
 
 import os
 import json
 import random
+import argparse
 
 import numpy as np
 import torch
@@ -12,6 +22,7 @@ import torch.nn as nn
 from src.dataset import make_loaders
 from src.model import MultiScaleResidualECGNet
 from src.evaluate import predict_probs, compute_metrics
+from src.io_utils import guard_outputs
 
 
 def set_seed(seed=42):
@@ -39,8 +50,18 @@ def train(
     learning_rate=0.001,
     patience=5,
     output="results/scheduler_experiment",
-    seed=42
+    seed=42,
+    processed="data/processed",
+    overwrite=False
 ):
+    guard_outputs(
+        [
+            f"{output}/checkpoints/multiscale_best.pt",
+            f"{output}/metrics/multiscale_history.json",
+        ],
+        overwrite=overwrite
+    )
+
     set_seed(seed)
 
     device = torch.device(
@@ -53,7 +74,7 @@ def train(
     print("Random seed:", seed)
 
     train_loader, val_loader, test_loader, y_train = make_loaders(
-        processed_dir="data/processed",
+        processed_dir=processed,
         batch_size=batch_size
     )
 
@@ -269,11 +290,25 @@ def train(
 
 if __name__ == "__main__":
 
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--epochs", type=int, default=20)
+    parser.add_argument("--batch-size", type=int, default=16)
+    parser.add_argument("--lr", type=float, default=0.001)
+    parser.add_argument("--patience", type=int, default=5)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--processed", default="data/processed")
+    parser.add_argument("--output", default="results/scheduler_experiment")
+    parser.add_argument("--overwrite", action="store_true")
+
+    args = parser.parse_args()
+
     train(
-        epochs=20,
-        batch_size=16,
-        learning_rate=0.001,
-        patience=5,
-        output="results/scheduler_experiment",
-        seed=42
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        learning_rate=args.lr,
+        patience=args.patience,
+        output=args.output,
+        seed=args.seed,
+        processed=args.processed,
+        overwrite=args.overwrite
     )

@@ -1,0 +1,42 @@
+{
+  "ecg_id": 63,
+  "model": "Multi-Scale Residual CNN",
+  "checkpoint": "results/scheduler_experiment/checkpoints/multiscale_best.pt",
+  "predictions": [
+    {
+      "class": "NORM",
+      "probability": 0.12229977548122406,
+      "threshold": 0.5239060521125793,
+      "predicted_label": 0,
+      "actual_label": 0
+    },
+    {
+      "class": "MI",
+      "probability": 0.953839898109436,
+      "threshold": 0.5296005010604858,
+      "predicted_label": 1,
+      "actual_label": 1
+    },
+    {
+      "class": "STTC",
+      "probability": 0.004385558422654867,
+      "threshold": 0.6721716523170471,
+      "predicted_label": 0,
+      "actual_label": 0
+    },
+    {
+      "class": "CD",
+      "probability": 0.10375310480594635,
+      "threshold": 0.5752673149108887,
+      "predicted_label": 0,
+      "actual_label": 0
+    },
+    {
+      "class": "HYP",
+      "probability": 0.005770370364189148,
+      "threshold": 0.7272968292236328,
+      "predicted_label": 0,
+      "actual_label": 0
+    }
+  ]
+}

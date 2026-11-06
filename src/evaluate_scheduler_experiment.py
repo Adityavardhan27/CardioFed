@@ -1,18 +1,25 @@
 
-"""Evaluate CardioFed scheduler experiment."""
+"""Evaluate the CardioFed scheduler experiment (PRIMARY multi-scale model).
+
+This checkpoint is reproducible from the committed src/train_multiscale.py
+(seed 42, default arguments). Defaults reproduce
+results/scheduler_experiment/metrics/multiscale_final_evaluation.json; the
+script refuses to overwrite an existing output unless --overwrite is given.
+"""
 
 import os
 import json
+import argparse
 
 import numpy as np
 import torch
-
-from sklearn.metrics import precision_recall_curve
 
 from src.dataset import make_loaders
 from src.model import MultiScaleResidualECGNet
 from src.evaluate import predict_probs, compute_metrics
 from src.preprocessing import CLASSES
+from src.thresholds import tune_thresholds
+from src.io_utils import guard_outputs
 
 
 CHECKPOINT_PATH = (
@@ -25,38 +32,12 @@ OUTPUT_PATH = (
 )
 
 
-def tune_thresholds(probs, targets):
+def main(args):
 
-    thresholds = []
+    CHECKPOINT_PATH = args.checkpoint
+    OUTPUT_PATH = args.output
 
-    for i, name in enumerate(CLASSES):
-
-        precision, recall, values = precision_recall_curve(
-            targets[:, i],
-            probs[:, i]
-        )
-
-        f1 = (
-            2 * precision[:-1] * recall[:-1]
-            / (precision[:-1] + recall[:-1] + 1e-8)
-        )
-
-        best_idx = int(np.argmax(f1))
-        threshold = float(values[best_idx])
-
-        thresholds.append(threshold)
-
-        print(
-            f"{name}: threshold={threshold:.4f}, "
-            f"validation F1={f1[best_idx]:.4f}"
-        )
-
-    return np.asarray(thresholds, dtype=np.float32)
-
-
-def main():
-
-    os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
+    guard_outputs([OUTPUT_PATH], overwrite=args.overwrite)
 
     device = torch.device(
         "cuda" if torch.cuda.is_available() else "cpu"
@@ -70,7 +51,7 @@ def main():
         )
 
     train_loader, val_loader, test_loader, _ = make_loaders(
-        processed_dir="data/processed",
+        processed_dir=args.processed,
         batch_size=16
     )
 
@@ -112,7 +93,8 @@ def main():
 
     thresholds = tune_thresholds(
         val_probs,
-        val_targets
+        val_targets,
+        verbose=True
     )
 
     val_metrics = compute_metrics(
@@ -171,4 +153,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--processed", default="data/processed")
+    parser.add_argument("--checkpoint", default=CHECKPOINT_PATH)
+    parser.add_argument("--output", default=OUTPUT_PATH)
+    parser.add_argument("--overwrite", action="store_true")
+    main(parser.parse_args())

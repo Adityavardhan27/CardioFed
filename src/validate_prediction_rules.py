@@ -1,6 +1,7 @@
 
 """Validate the NORM consistency rule on the validation set."""
 
+import argparse
 import json
 import numpy as np
 import torch
@@ -18,16 +19,18 @@ from src.dataset import make_loaders
 from src.model import MultiScaleResidualECGNet
 from src.evaluate import predict_probs
 from src.preprocessing import CLASSES
+from src.io_utils import guard_outputs
+from src.model_registry import MODELS, DEFAULT_CENTRALIZED
 
 
 ROOT = Path(__file__).resolve().parent.parent
 
 DATA_DIR = ROOT / "data" / "processed"
-CHECKPOINT_PATH = ROOT / "results" / "checkpoints" / "multiscale_best.pt"
-EVALUATION_PATH = ROOT / "results" / "metrics" / "multiscale_final_evaluation.json"
-OUTPUT_DIR = ROOT / "results" / "metrics"
+CHECKPOINT_PATH = ROOT / MODELS[DEFAULT_CENTRALIZED]["checkpoint"]
+EVALUATION_PATH = ROOT / MODELS[DEFAULT_CENTRALIZED]["evaluation"]
+OUTPUT_DIR = ROOT / "results/revised/prediction_rules"
 
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUTS = ['prediction_rule_validation.json']
 
 
 def calculate_metrics(probabilities, actual, predictions):
@@ -73,6 +76,14 @@ def calculate_metrics(probabilities, actual, predictions):
 
 
 def main():
+
+    guard_outputs(
+        [OUTPUT_DIR / name for name in OUTPUTS],
+        overwrite=ARGS.overwrite
+    )
+
+    print("Checkpoint:", CHECKPOINT_PATH)
+    print("Thresholds from:", EVALUATION_PATH)
 
     device = torch.device(
         "cuda" if torch.cuda.is_available() else "cpu"
@@ -207,6 +218,7 @@ def main():
     # Save results.
     summary = {
         "model": "Multi-Scale Residual CNN",
+        "checkpoint": str(CHECKPOINT_PATH.relative_to(ROOT)) if CHECKPOINT_PATH.is_relative_to(ROOT) else str(CHECKPOINT_PATH),
         "dataset": "Validation set (fold 9)",
         "validation_recordings": int(len(actual)),
         "thresholds": dict(zip(CLASSES, thresholds.tolist())),
@@ -226,4 +238,13 @@ def main():
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--checkpoint", default=str(CHECKPOINT_PATH))
+    parser.add_argument("--evaluation", default=str(EVALUATION_PATH))
+    parser.add_argument("--output-dir", default=str(OUTPUT_DIR))
+    parser.add_argument("--overwrite", action="store_true")
+    ARGS = parser.parse_args()
+    CHECKPOINT_PATH = Path(ARGS.checkpoint)
+    EVALUATION_PATH = Path(ARGS.evaluation)
+    OUTPUT_DIR = Path(ARGS.output_dir)
     main()

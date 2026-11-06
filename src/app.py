@@ -17,14 +17,17 @@ sys.path.insert(0, str(ROOT))
 
 from src.model import MultiScaleResidualECGNet
 from src.preprocessing import CLASSES
+from src.model_registry import MODELS, DEFAULT_CENTRALIZED
 
 
 # --------------------------------------------------
 # CONFIGURATION
 # --------------------------------------------------
 
-CHECKPOINT_PATH = ROOT / "results/checkpoints/multiscale_best.pt"
-EVALUATION_PATH = ROOT / "results/metrics/multiscale_final_evaluation.json"
+# Primary (reproducible) centralized multi-scale model and its
+# validation-tuned thresholds; see src/model_registry.py.
+CHECKPOINT_PATH = ROOT / MODELS[DEFAULT_CENTRALIZED]["checkpoint"]
+EVALUATION_PATH = ROOT / MODELS[DEFAULT_CENTRALIZED]["evaluation"]
 
 DEVICE = torch.device(
     "cuda" if torch.cuda.is_available() else "cpu"
@@ -363,6 +366,17 @@ def prepare_ecg_image(uploaded_file):
 # --------------------------------------------------
 # PREDICTION
 # --------------------------------------------------
+
+def flat_lead_names(signal, min_std=1e-3):
+    """Return names of leads whose standard deviation is ~0 (flat/missing)."""
+
+    stds = signal[0].std(dim=1).cpu().numpy()
+
+    return [
+        LEADS[i] for i, value in enumerate(stds)
+        if value < min_std
+    ]
+
 
 def predict_ecg(signal, model, thresholds):
 
@@ -723,6 +737,20 @@ if uploaded_file is not None:
                 )
 
             st.markdown("## Prediction Results")
+
+            # Input quality check: the models output confident abnormal
+            # predictions (e.g. STTC/HYP) for flat-line input, so flat or
+            # missing leads make the prediction unreliable.
+            flat_leads = flat_lead_names(signal)
+
+            if flat_leads:
+                st.warning(
+                    "Flat or missing lead(s) detected: "
+                    f"{', '.join(flat_leads)}. The models were trained on "
+                    "complete 12-lead ECGs and are unreliable when leads are "
+                    "missing; a flat-line input is itself classified as "
+                    "abnormal. Interpret these predictions with caution."
+                )
 
             # --------------------------------------------------
             # INTEGRATED GRADIENTS

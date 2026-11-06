@@ -1,0 +1,309 @@
+{
+  "site_groups": "site 0/1/2 as recorded in PTB-XL; 'other sites' = all others incl. missing",
+  "client_mapping": {
+    "client 1": "site 0",
+    "client 2": "site 1",
+    "client 3": "site 2",
+    "client 4": "other sites"
+  },
+  "thresholds": "validation-tuned thresholds from each original evaluation JSON",
+  "bootstrap": {
+    "unit": "patient",
+    "n_boot": 1000,
+    "seed": 0
+  },
+  "label_prevalence": [
+    {
+      "site_group": "site 0",
+      "records": 483,
+      "patients": 417,
+      "NORM": 0.6418,
+      "MI": 0.1615,
+      "STTC": 0.1263,
+      "CD": 0.147,
+      "HYP": 0.0704
+    },
+    {
+      "site_group": "site 1",
+      "records": 597,
+      "patients": 562,
+      "NORM": 0.4439,
+      "MI": 0.2077,
+      "STTC": 0.2446,
+      "CD": 0.2094,
+      "HYP": 0.1591
+    },
+    {
+      "site_group": "site 2",
+      "records": 867,
+      "patients": 704,
+      "NORM": 0.3264,
+      "MI": 0.3264,
+      "STTC": 0.2422,
+      "CD": 0.2884,
+      "HYP": 0.0957
+    },
+    {
+      "site_group": "other sites",
+      "records": 210,
+      "patients": 198,
+      "NORM": 0.2762,
+      "MI": 0.3095,
+      "STTC": 0.4238,
+      "CD": 0.2381,
+      "HYP": 0.2381
+    },
+    {
+      "site_group": "all",
+      "records": 2157,
+      "patients": 1876,
+      "NORM": 0.4247,
+      "MI": 0.255,
+      "STTC": 0.2346,
+      "CD": 0.2299,
+      "HYP": 0.1215
+    }
+  ],
+  "metrics": [
+    {
+      "model": "baseline",
+      "site_group": "site 0",
+      "records": 483,
+      "macro_auroc": 0.9228396152793795,
+      "macro_auroc_ci_low": 0.9025430439115028,
+      "macro_auroc_ci_high": 0.9416071454432406,
+      "macro_f1": 0.7019166331523138,
+      "hamming_loss": 0.09399585921325052,
+      "subset_accuracy": 0.7184265010351967,
+      "classes_without_auroc": ""
+    },
+    {
+      "model": "baseline",
+      "site_group": "site 1",
+      "records": 597,
+      "macro_auroc": 0.9167053693906733,
+      "macro_auroc_ci_low": 0.9023950040151953,
+      "macro_auroc_ci_high": 0.9299409804078306,
+      "macro_f1": 0.7145537550392029,
+      "hamming_loss": 0.12864321608040202,
+      "subset_accuracy": 0.5778894472361809,
+      "classes_without_auroc": ""
+    },
+    {
+      "model": "baseline",
+      "site_group": "site 2",
+      "records": 867,
+      "macro_auroc": 0.8792737808443161,
+      "macro_auroc_ci_low": 0.863736289933818,
+      "macro_auroc_ci_high": 0.8945701093435164,
+      "macro_f1": 0.6687938382539669,
+      "hamming_loss": 0.14901960784313725,
+      "subset_accuracy": 0.5213379469434832,
+      "classes_without_auroc": ""
+    },
+    {
+      "model": "baseline",
+      "site_group": "other sites",
+      "records": 210,
+      "macro_auroc": 0.920340969646394,
+      "macro_auroc_ci_low": 0.8950392714702048,
+      "macro_auroc_ci_high": 0.9434560633671704,
+      "macro_f1": 0.7650930077487752,
+      "hamming_loss": 0.14476190476190476,
+      "subset_accuracy": 0.5333333333333333,
+      "classes_without_auroc": ""
+    },
+    {
+      "model": "baseline",
+      "site_group": "all",
+      "records": 2157,
+      "macro_auroc": 0.9076250377841873,
+      "macro_auroc_ci_low": 0.8987733949981074,
+      "macro_auroc_ci_high": 0.9160268870423726,
+      "macro_f1": 0.709745110625976,
+      "hamming_loss": 0.13064441353732034,
+      "subset_accuracy": 0.5822902178952248,
+      "classes_without_auroc": ""
+    },
+    {
+      "model": "multiscale",
+      "site_group": "site 0",
+      "records": 483,
+      "macro_auroc": 0.9190953086114979,
+      "macro_auroc_ci_low": 0.898974719635904,
+      "macro_auroc_ci_high": 0.9380727132429415,
+      "macro_f1": 0.6710284485464337,
+      "hamming_loss": 0.10476190476190476,
+      "subset_accuracy": 0.6853002070393375,
+      "classes_without_auroc": ""
+    },
+    {
+      "model": "multiscale",
+      "site_group": "site 1",
+      "records": 597,
+      "macro_auroc": 0.9152273286028448,
+      "macro_auroc_ci_low": 0.9017233922296097,
+      "macro_auroc_ci_high": 0.929193469641149,
+      "macro_f1": 0.7052180678068014,
+      "hamming_loss": 0.1373534338358459,
+      "subset_accuracy": 0.5644891122278057,
+      "classes_without_auroc": ""
+    },
+    {
+      "model": "multiscale",
+      "site_group": "site 2",
+      "records": 867,
+      "macro_auroc": 0.8745900402462379,
+      "macro_auroc_ci_low": 0.8583161983044263,
+      "macro_auroc_ci_high": 0.8901862497420631,
+      "macro_f1": 0.6745116148367901,
+      "hamming_loss": 0.15155709342560553,
+      "subset_accuracy": 0.532871972318339,
+      "classes_without_auroc": ""
+    },
+    {
+      "model": "multiscale",
+      "site_group": "other sites",
+      "records": 210,
+      "macro_auroc": 0.9266001808652964,
+      "macro_auroc_ci_low": 0.9032596978828222,
+      "macro_auroc_ci_high": 0.9475580134198257,
+      "macro_f1": 0.7681560561196692,
+      "hamming_loss": 0.1457142857142857,
+      "subset_accuracy": 0.5380952380952381,
+      "classes_without_auroc": ""
+    },
+    {
+      "model": "multiscale",
+      "site_group": "all",
+      "records": 2157,
+      "macro_auroc": 0.9060893882951767,
+      "macro_auroc_ci_low": 0.8968924056589092,
+      "macro_auroc_ci_high": 0.9145792445895871,
+      "macro_f1": 0.7045412957781626,
+      "hamming_loss": 0.13657858136300416,
+      "subset_accuracy": 0.5762633286972647,
+      "classes_without_auroc": ""
+    },
+    {
+      "model": "federated_r3",
+      "site_group": "site 0",
+      "records": 483,
+      "macro_auroc": 0.9133142054004262,
+      "macro_auroc_ci_low": 0.8927692732004104,
+      "macro_auroc_ci_high": 0.9323516702273148,
+      "macro_f1": 0.6802638821972871,
+      "hamming_loss": 0.105175983436853,
+      "subset_accuracy": 0.6728778467908902,
+      "classes_without_auroc": ""
+    },
+    {
+      "model": "federated_r3",
+      "site_group": "site 1",
+      "records": 597,
+      "macro_auroc": 0.9017438365757371,
+      "macro_auroc_ci_low": 0.885958360984283,
+      "macro_auroc_ci_high": 0.9171883731254679,
+      "macro_f1": 0.6886460769123115,
+      "hamming_loss": 0.13869346733668342,
+      "subset_accuracy": 0.5728643216080402,
+      "classes_without_auroc": ""
+    },
+    {
+      "model": "federated_r3",
+      "site_group": "site 2",
+      "records": 867,
+      "macro_auroc": 0.8667112981336051,
+      "macro_auroc_ci_low": 0.8489695970726965,
+      "macro_auroc_ci_high": 0.8829144422034223,
+      "macro_f1": 0.6611707247806395,
+      "hamming_loss": 0.1635524798154556,
+      "subset_accuracy": 0.4925028835063437,
+      "classes_without_auroc": ""
+    },
+    {
+      "model": "federated_r3",
+      "site_group": "other sites",
+      "records": 210,
+      "macro_auroc": 0.9027340152469823,
+      "macro_auroc_ci_low": 0.8740154314892061,
+      "macro_auroc_ci_high": 0.9291091076138838,
+      "macro_f1": 0.7655029678225554,
+      "hamming_loss": 0.14761904761904762,
+      "subset_accuracy": 0.5190476190476191,
+      "classes_without_auroc": ""
+    },
+    {
+      "model": "federated_r3",
+      "site_group": "all",
+      "records": 2157,
+      "macro_auroc": 0.8935895060743494,
+      "macro_auroc_ci_low": 0.8839377544405935,
+      "macro_auroc_ci_high": 0.9026850432931458,
+      "macro_f1": 0.6936782474348407,
+      "hamming_loss": 0.14204914232730645,
+      "subset_accuracy": 0.5577190542420027,
+      "classes_without_auroc": ""
+    },
+    {
+      "model": "federated_r8",
+      "site_group": "site 0",
+      "records": 483,
+      "macro_auroc": 0.9262475161856036,
+      "macro_auroc_ci_low": 0.9066497064610489,
+      "macro_auroc_ci_high": 0.9433371382766602,
+      "macro_f1": 0.6831754238001937,
+      "hamming_loss": 0.09855072463768116,
+      "subset_accuracy": 0.7163561076604554,
+      "classes_without_auroc": ""
+    },
+    {
+      "model": "federated_r8",
+      "site_group": "site 1",
+      "records": 597,
+      "macro_auroc": 0.915697319729858,
+      "macro_auroc_ci_low": 0.9009177057803515,
+      "macro_auroc_ci_high": 0.928958831827091,
+      "macro_f1": 0.7121825732891294,
+      "hamming_loss": 0.12562814070351758,
+      "subset_accuracy": 0.5946398659966499,
+      "classes_without_auroc": ""
+    },
+    {
+      "model": "federated_r8",
+      "site_group": "site 2",
+      "records": 867,
+      "macro_auroc": 0.876886734274996,
+      "macro_auroc_ci_low": 0.860260583966404,
+      "macro_auroc_ci_high": 0.8922273514661587,
+      "macro_f1": 0.6745811904551514,
+      "hamming_loss": 0.15040369088811995,
+      "subset_accuracy": 0.5317185697808535,
+      "classes_without_auroc": ""
+    },
+    {
+      "model": "federated_r8",
+      "site_group": "other sites",
+      "records": 210,
+      "macro_auroc": 0.9145708907960526,
+      "macro_auroc_ci_low": 0.8894247281900758,
+      "macro_auroc_ci_high": 0.9367048264976325,
+      "macro_f1": 0.7718429701009297,
+      "hamming_loss": 0.14,
+      "subset_accuracy": 0.5285714285714286,
+      "classes_without_auroc": ""
+    },
+    {
+      "model": "federated_r8",
+      "site_group": "all",
+      "records": 2157,
+      "macro_auroc": 0.905724502179288,
+      "macro_auroc_ci_low": 0.8967160706397435,
+      "macro_auroc_ci_high": 0.9138212658997525,
+      "macro_f1": 0.7062648221345812,
+      "hamming_loss": 0.13092257765414927,
+      "subset_accuracy": 0.5901715345387112,
+      "classes_without_auroc": ""
+    }
+  ]
+}

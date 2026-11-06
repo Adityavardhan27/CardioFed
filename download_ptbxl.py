@@ -1,17 +1,47 @@
 
+"""Download PTB-XL 1.0.3 (metadata + 100 Hz records) from PhysioNet.
+
+Resumable: files that already exist are skipped. The two metadata files are
+downloaded first if they are missing.
+
+    python download_ptbxl.py                    # everything (100 Hz)
+    python download_ptbxl.py --metadata-only    # only the two CSV files
+"""
+
+import argparse
 import os
 import time
 import pandas as pd
 import wfdb
 
-# Project paths
-ROOT = "data/raw/ptb-xl"
-METADATA = os.path.join(ROOT, "ptbxl_database.csv")
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--root", default="data/raw/ptb-xl")
+parser.add_argument("--metadata-only", action="store_true")
+ARGS = parser.parse_args()
 
-BATCH_SIZE = 100       # 50 ECG records per batch
+# Project paths
+ROOT = ARGS.root
+METADATA = os.path.join(ROOT, "ptbxl_database.csv")
+METADATA_FILES = ["ptbxl_database.csv", "scp_statements.csv"]
+
+BATCH_SIZE = 100       # files (.hea/.dat) per download batch
 MAX_RETRIES = 5
 
 os.makedirs(ROOT, exist_ok=True)
+
+# Fetch the metadata first; the record list is read from it.
+missing_metadata = [
+    name for name in METADATA_FILES
+    if not os.path.exists(os.path.join(ROOT, name))
+]
+
+if missing_metadata:
+    print("Downloading metadata:", ", ".join(missing_metadata))
+    wfdb.dl_files("ptb-xl", ROOT, missing_metadata, overwrite=False)
+
+if ARGS.metadata_only:
+    print("Metadata available in", ROOT)
+    raise SystemExit(0)
 
 # Read official PTB-XL metadata
 df = pd.read_csv(METADATA)
