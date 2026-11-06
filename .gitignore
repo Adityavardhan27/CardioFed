@@ -1,5 +1,4 @@
-
-# Python
+﻿# Python cache
 __pycache__/
 *.py[cod]
 *.pyo
@@ -9,40 +8,19 @@ __pycache__/
 venv/
 env/
 
-# Dataset files
-data/raw/
-data/processed/
-data/processed_verified_backup/
-
-# Model checkpoints and large arrays
-*.pt
-*.pth
-*.ckpt
-*.npy
-*.npz
-
-# Generated ECG experiments
-results/examples/
-results/multirecord_digitization/
-results/multirecord_digitization_100/
-results/multirecord_prediction/
-results/multirecord_prediction_100/
-results/predictions/
-
-# Experiment checkpoints
-results/scheduler_experiment/checkpoints/
-
-# Temporary and empty files
-do
+# Temporary files
 *.log
 *.tmp
+do
 
-# IDE
+# IDE settings
 .vscode/
 .idea/
 
-# Jupyter
+# Jupyter temporary checkpoints
 .ipynb_checkpoints/
 
-# Record-level prediction data
-results/metrics/misclassified_ecgs.csv
+# Local secrets
+.env
+.env.*
+!.env.example

@@ -1,0 +1,12 @@
+{
+    "number_of_records": 15,
+    "fold": 10,
+    "row_height": 396,
+    "vertical_scale": 12.0,
+    "V4_mean_MAE": 0.12470095741252105,
+    "V5_mean_MAE": 0.08457554415282276,
+    "V4_mean_RMSE": 0.32766849133703446,
+    "V5_mean_RMSE": 0.22389595467183326,
+    "V4_mean_correlation": 0.942905866289255,
+    "V5_mean_correlation": 0.9763464423325405
+}

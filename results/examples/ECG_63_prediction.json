@@ -1,0 +1,41 @@
+{
+  "ecg_id": 63,
+  "model": "Multi-Scale Residual CNN",
+  "predictions": [
+    {
+      "class": "NORM",
+      "probability": 0.6623701453208923,
+      "threshold": 0.3495481312274933,
+      "predicted_label": 1,
+      "actual_label": 0
+    },
+    {
+      "class": "MI",
+      "probability": 0.6009209156036377,
+      "threshold": 0.548537015914917,
+      "predicted_label": 1,
+      "actual_label": 1
+    },
+    {
+      "class": "STTC",
+      "probability": 0.0762794241309166,
+      "threshold": 0.7705705761909485,
+      "predicted_label": 0,
+      "actual_label": 0
+    },
+    {
+      "class": "CD",
+      "probability": 0.10730765759944916,
+      "threshold": 0.6180837154388428,
+      "predicted_label": 0,
+      "actual_label": 0
+    },
+    {
+      "class": "HYP",
+      "probability": 0.038567155599594116,
+      "threshold": 0.7899512648582458,
+      "predicted_label": 0,
+      "actual_label": 0
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+    "number_of_records": 15,
+    "V4_mean_probability_MAE": 0.031059366029997666,
+    "V5_mean_probability_MAE": 0.037191030507286386,
+    "V4_raw_exact_agreement_count": 14,
+    "V5_raw_exact_agreement_count": 14,
+    "V4_final_exact_agreement_count": 15,
+    "V5_final_exact_agreement_count": 15,
+    "V4_mean_raw_label_agreement": 0.9866666666666667,
+    "V5_mean_raw_label_agreement": 0.9866666666666667,
+    "V4_mean_final_label_agreement": 1.0,
+    "V5_mean_final_label_agreement": 1.0
+}
