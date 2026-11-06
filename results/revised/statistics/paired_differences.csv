@@ -1,0 +1,9 @@
+model_a,model_b,question,metric,difference,ci_low,ci_high,p_value,p_value_holm,significant_at_0.05_holm
+federated_r8,multiscale,"Federated vs centralized training, same architecture",macro_auroc,-0.00036488611588869624,-0.0050403824673959045,0.0043804323633032435,0.88,1.0,False
+federated_r8,multiscale,"Federated vs centralized training, same architecture",macro_f1,0.001723526356418592,-0.009827238116834013,0.012568466657386685,0.785,1.0,False
+baseline,multiscale,"Baseline CNN vs multi-scale CNN, both centralized",macro_auroc,0.0015356494890106376,-0.0025044220782752618,0.005478500311394599,0.458,1.0,False
+baseline,multiscale,"Baseline CNN vs multi-scale CNN, both centralized",macro_f1,0.005203814847813404,-0.005681166735299617,0.01626276106041394,0.347,1.0,False
+baseline,federated_r8,Centralized baseline vs federated multi-scale,macro_auroc,0.0019005356048993338,-0.0022082698017063308,0.005686435995364998,0.366,1.0,False
+baseline,federated_r8,Centralized baseline vs federated multi-scale,macro_f1,0.0034802884913948118,-0.008074546756698404,0.015518270742536847,0.543,1.0,False
+federated_r8,federated_r3,Effect of 8 vs 3 communication rounds,macro_auroc,0.012134996104938622,0.009177702603468677,0.01511257966927598,0.0005,0.002,True
+federated_r8,federated_r3,Effect of 8 vs 3 communication rounds,macro_f1,0.01258657469974045,0.003994594379304611,0.020940909510265213,0.003,0.012,True

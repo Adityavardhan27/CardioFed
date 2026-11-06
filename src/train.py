@@ -1,5 +1,13 @@
 
-"""Train the centralized baseline 1D CNN."""
+"""Train the centralized baseline 1D CNN.
+
+The reported baseline (results/checkpoints/centralized_best.pt) was trained
+for 10 epochs (see results/metrics/baseline_history.json); the other
+hyper-parameters were not recorded and are assumed to be the defaults below.
+
+Refuses to start if the checkpoint or history file already exists, unless
+--overwrite is given. Use --output to train into a new directory.
+"""
 
 import os
 import json
@@ -13,6 +21,7 @@ import torch.nn as nn
 from src.dataset import make_loaders
 from src.model import ECGNet
 from src.evaluate import predict_probs, compute_metrics
+from src.io_utils import guard_outputs
 
 
 def set_seed(seed=42):
@@ -41,8 +50,16 @@ def train(
     learning_rate=0.001,
     patience=4,
     output="results",
-    seed=42
+    seed=42,
+    overwrite=False
 ):
+
+    checkpoint_path = (
+        f"{output}/checkpoints/centralized_best.pt"
+    )
+    history_path = f"{output}/metrics/baseline_history.json"
+
+    guard_outputs([checkpoint_path, history_path], overwrite=overwrite)
 
     set_seed(seed)
 
@@ -73,13 +90,6 @@ def train(
     optimizer = torch.optim.Adam(
         model.parameters(),
         lr=learning_rate
-    )
-
-    os.makedirs(f"{output}/checkpoints", exist_ok=True)
-    os.makedirs(f"{output}/metrics", exist_ok=True)
-
-    checkpoint_path = (
-        f"{output}/checkpoints/centralized_best.pt"
     )
 
     history = []
@@ -168,10 +178,7 @@ def train(
                 print("Early stopping triggered.")
                 break
 
-    with open(
-        f"{output}/metrics/baseline_history.json",
-        "w"
-    ) as file:
+    with open(history_path, "w") as file:
 
         json.dump(history, file, indent=2)
 
@@ -191,12 +198,20 @@ if __name__ == "__main__":
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--lr", type=float, default=0.001)
     parser.add_argument("--patience", type=int, default=4)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--processed", default="data/processed")
+    parser.add_argument("--output", default="results")
+    parser.add_argument("--overwrite", action="store_true")
 
     args = parser.parse_args()
 
     train(
+        processed=args.processed,
         epochs=args.epochs,
         batch_size=args.batch_size,
         learning_rate=args.lr,
-        patience=args.patience
+        patience=args.patience,
+        output=args.output,
+        seed=args.seed,
+        overwrite=args.overwrite
     )

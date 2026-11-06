@@ -1,48 +1,30 @@
 
-"""Final evaluation of the CardioFed FedAvg model."""
+"""Final evaluation of a CardioFed FedAvg checkpoint.
 
-import os
+Defaults reproduce results/metrics/federated_final_evaluation.json (8 rounds).
+For the 3-round model use:
+    --checkpoint results/checkpoints/federated_3round_best.pt
+    --output <new path>
+Existing outputs are never overwritten unless --overwrite is given.
+"""
+
+import argparse
 import json
 import numpy as np
 import torch
 
 from torch.utils.data import DataLoader
-from sklearn.metrics import precision_recall_curve
 
 from src.model import MultiScaleResidualECGNet
 from src.dataset import ECGDataset
 from src.evaluate import predict_probs, compute_metrics
 from src.preprocessing import CLASSES
+from src.thresholds import tune_thresholds
+from src.io_utils import guard_outputs
 
 
-def tune_thresholds(probabilities, targets):
-    """Tune one classification threshold per class on validation data."""
-
-    thresholds = []
-
-    for class_index in range(len(CLASSES)):
-        precision, recall, threshold_values = precision_recall_curve(
-            targets[:, class_index],
-            probabilities[:, class_index]
-        )
-
-        if len(threshold_values) == 0:
-            thresholds.append(0.5)
-            continue
-
-        f1_scores = (
-            2 * precision[:-1] * recall[:-1]
-            / (precision[:-1] + recall[:-1] + 1e-8)
-        )
-
-        best_index = np.argmax(f1_scores)
-        thresholds.append(float(threshold_values[best_index]))
-
-    return np.array(thresholds)
-
-
-def main():
-    os.makedirs("results/metrics", exist_ok=True)
+def main(args):
+    guard_outputs([args.output], overwrite=args.overwrite)
 
     device = torch.device(
         "cuda" if torch.cuda.is_available() else "cpu"
@@ -50,8 +32,8 @@ def main():
 
     print("Device:", device)
 
-    folds = np.load("data/processed/folds.npy")
-    y = np.load("data/processed/y.npy")
+    folds = np.load(f"{args.processed}/folds.npy")
+    y = np.load(f"{args.processed}/y.npy")
 
     val_indices = np.where(folds == 9)[0]
     test_indices = np.where(folds == 10)[0]
@@ -60,11 +42,11 @@ def main():
     print("Test records:", len(test_indices))
 
     val_dataset = ECGDataset(
-        "data/processed", val_indices
+        args.processed, val_indices
     )
 
     test_dataset = ECGDataset(
-        "data/processed", test_indices
+        args.processed, test_indices
     )
 
     val_loader = DataLoader(
@@ -88,7 +70,7 @@ def main():
     ).to(device)
 
     checkpoint = torch.load(
-        "results/checkpoints/federated_best.pt",
+        args.checkpoint,
         map_location=device
     )
 
@@ -150,9 +132,7 @@ def main():
         "metrics": metrics
     }
 
-    output_path = (
-        "results/metrics/federated_final_evaluation.json"
-    )
+    output_path = args.output
 
     with open(output_path, "w") as file:
         json.dump(results, file, indent=4)
@@ -176,4 +156,13 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--processed", default="data/processed")
+    parser.add_argument(
+        "--checkpoint", default="results/checkpoints/federated_best.pt"
+    )
+    parser.add_argument(
+        "--output", default="results/metrics/federated_final_evaluation.json"
+    )
+    parser.add_argument("--overwrite", action="store_true")
+    main(parser.parse_args())

@@ -1,55 +1,29 @@
+"""Final baseline evaluation with validation-tuned thresholds.
 
-"""Final baseline evaluation with validation-tuned thresholds."""
+Thresholds are tuned on the validation fold (9); the test fold (10) is
+evaluated once with those thresholds.
 
-import os
+By default this reproduces results/metrics/baseline_final_evaluation.json.
+Because that file already exists, the script refuses to run unless you pass
+a new --output path (recommended) or --overwrite.
+"""
+
+import argparse
 import json
-import numpy as np
-import torch
 
-from sklearn.metrics import precision_recall_curve
+import torch
 
 from src.dataset import make_loaders
 from src.model import ECGNet
 from src.evaluate import predict_probs, compute_metrics
 from src.preprocessing import CLASSES
+from src.thresholds import tune_thresholds
+from src.io_utils import guard_outputs
 
 
-def tune_thresholds(probs, targets):
+def main(args):
 
-    thresholds = []
-
-    for i, name in enumerate(CLASSES):
-
-        precision, recall, values = precision_recall_curve(
-            targets[:, i],
-            probs[:, i]
-        )
-
-        f1 = (
-            2 * precision[:-1] * recall[:-1]
-            / (precision[:-1] + recall[:-1] + 1e-8)
-        )
-
-        best_idx = int(np.argmax(f1))
-        best_threshold = float(values[best_idx])
-
-        thresholds.append(best_threshold)
-
-        print(
-            f"{name}: threshold={best_threshold:.4f}, "
-            f"validation F1={f1[best_idx]:.4f}"
-        )
-
-    return np.asarray(thresholds, dtype=np.float32)
-
-
-def main():
-
-    processed = "data/processed"
-    checkpoint_path = "results/checkpoints/centralized_best.pt"
-    output_dir = "results/metrics"
-
-    os.makedirs(output_dir, exist_ok=True)
+    guard_outputs([args.output], overwrite=args.overwrite)
 
     device = torch.device(
         "cuda" if torch.cuda.is_available() else "cpu"
@@ -58,7 +32,7 @@ def main():
     print("Evaluation device:", device)
 
     train_loader, val_loader, test_loader, y_train = make_loaders(
-        processed_dir=processed,
+        processed_dir=args.processed,
         batch_size=16
     )
 
@@ -70,13 +44,13 @@ def main():
     ).to(device)
 
     checkpoint = torch.load(
-        checkpoint_path,
+        args.checkpoint,
         map_location=device
     )
 
     model.load_state_dict(checkpoint["model_state_dict"])
 
-    print("\nLoaded best baseline checkpoint.")
+    print("\nLoaded best baseline checkpoint:", args.checkpoint)
     print("Best validation AUROC:", checkpoint["best_val_auroc"])
 
     # Step 1: Tune thresholds using validation data only.
@@ -86,9 +60,10 @@ def main():
         model, val_loader, device
     )
 
-    thresholds = tune_thresholds(val_probs, val_targets)
+    thresholds = tune_thresholds(val_probs, val_targets, verbose=True)
 
-    # Step 2: Evaluate validation metrics with tuned thresholds.
+    # Step 2: Validation metrics. NOTE: optimistic, because the thresholds
+    # were tuned on this same validation data.
     val_metrics = compute_metrics(
         val_probs,
         val_targets,
@@ -118,12 +93,7 @@ def main():
         "test_metrics": test_metrics
     }
 
-    output_path = os.path.join(
-        output_dir,
-        "baseline_final_evaluation.json"
-    )
-
-    with open(output_path, "w") as f:
+    with open(args.output, "w") as f:
         json.dump(results, f, indent=2)
 
     print("\n========== FINAL TEST RESULTS ==========")
@@ -132,10 +102,21 @@ def main():
 
     print("\nThresholds:", results["thresholds"])
 
-    print("\nResults saved to:", output_path)
+    print("\nResults saved to:", args.output)
 
     print("\nBASELINE EVALUATION COMPLETED!")
 
 
 if __name__ == "__main__":
-    main()
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--processed", default="data/processed")
+    parser.add_argument(
+        "--checkpoint", default="results/checkpoints/centralized_best.pt"
+    )
+    parser.add_argument(
+        "--output", default="results/metrics/baseline_final_evaluation.json"
+    )
+    parser.add_argument("--overwrite", action="store_true")
+
+    main(parser.parse_args())

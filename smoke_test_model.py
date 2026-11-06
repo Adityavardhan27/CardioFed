@@ -51,4 +51,4 @@ try:
 finally:
     shutil.rmtree(temp_dir, ignore_errors=True)
 
-print("\\nSMOKE TEST PASSED - pipeline works end to end")
+print("\nSMOKE TEST PASSED - pipeline works end to end")

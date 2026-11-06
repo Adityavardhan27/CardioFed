@@ -1,0 +1,69 @@
+{
+  "model": "Multi-Scale Residual CNN",
+  "checkpoint": "results\\scheduler_experiment\\checkpoints\\multiscale_best.pt",
+  "dataset": "Validation set (fold 9)",
+  "validation_recordings": 2145,
+  "thresholds": {
+    "NORM": 0.5239060521125793,
+    "MI": 0.5296005010604858,
+    "STTC": 0.6721716523170471,
+    "CD": 0.5752673149108887,
+    "HYP": 0.7272968292236328
+  },
+  "original_metrics": {
+    "macro_auroc": 0.9106910070130614,
+    "macro_f1": 0.7271377569171229,
+    "hamming_loss": 0.12745920745920747,
+    "subset_accuracy": 0.5813519813519814,
+    "per_class_f1": {
+      "NORM": 0.8502364687335786,
+      "MI": 0.7463203463203463,
+      "STTC": 0.7554347826086957,
+      "CD": 0.7820136852394917,
+      "HYP": 0.5016835016835017
+    },
+    "per_class_precision": {
+      "NORM": 0.8213197969543147,
+      "MI": 0.7008130081300813,
+      "STTC": 0.7079796264855688,
+      "CD": 0.7575757575757576,
+      "HYP": 0.4570552147239264
+    },
+    "per_class_recall": {
+      "NORM": 0.8812636165577342,
+      "MI": 0.7981481481481482,
+      "STTC": 0.8097087378640777,
+      "CD": 0.8080808080808081,
+      "HYP": 0.5559701492537313
+    }
+  },
+  "norm_consistency_metrics": {
+    "macro_auroc": 0.9106910070130614,
+    "macro_f1": 0.7245068098517017,
+    "hamming_loss": 0.12857808857808858,
+    "subset_accuracy": 0.5958041958041959,
+    "per_class_f1": {
+      "NORM": 0.8370817334064728,
+      "MI": 0.7463203463203463,
+      "STTC": 0.7554347826086957,
+      "CD": 0.7820136852394917,
+      "HYP": 0.5016835016835017
+    },
+    "per_class_precision": {
+      "NORM": 0.8430939226519337,
+      "MI": 0.7008130081300813,
+      "STTC": 0.7079796264855688,
+      "CD": 0.7575757575757576,
+      "HYP": 0.4570552147239264
+    },
+    "per_class_recall": {
+      "NORM": 0.8311546840958606,
+      "MI": 0.7981481481481482,
+      "STTC": 0.8097087378640777,
+      "CD": 0.8080808080808081,
+      "HYP": 0.5559701492537313
+    }
+  },
+  "original_norm_abnormal_conflicts": 80,
+  "remaining_norm_abnormal_conflicts": 0
+}

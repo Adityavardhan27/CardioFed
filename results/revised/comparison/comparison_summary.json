@@ -1,0 +1,111 @@
+{
+  "models_compared": [
+    "baseline",
+    "multiscale",
+    "federated_r3",
+    "federated_r8"
+  ],
+  "note": "Point estimates only rank models; use the paired comparisons for claims. Thresholds are validation-tuned per model.",
+  "paired_comparisons": [
+    {
+      "model_a": "federated_r8",
+      "model_b": "multiscale",
+      "metric": "macro_auroc",
+      "difference": -0.0003648861158886,
+      "ci_low": -0.0050403824673959,
+      "ci_high": 0.0043804323633032,
+      "p_value": 0.88,
+      "p_value_holm": 1.0,
+      "significant_at_0.05_holm": false
+    },
+    {
+      "model_a": "federated_r8",
+      "model_b": "multiscale",
+      "metric": "macro_f1",
+      "difference": 0.0017235263564185,
+      "ci_low": -0.009827238116834,
+      "ci_high": 0.0125684666573866,
+      "p_value": 0.785,
+      "p_value_holm": 1.0,
+      "significant_at_0.05_holm": false
+    },
+    {
+      "model_a": "baseline",
+      "model_b": "multiscale",
+      "metric": "macro_auroc",
+      "difference": 0.0015356494890106,
+      "ci_low": -0.0025044220782752,
+      "ci_high": 0.0054785003113945,
+      "p_value": 0.458,
+      "p_value_holm": 1.0,
+      "significant_at_0.05_holm": false
+    },
+    {
+      "model_a": "baseline",
+      "model_b": "multiscale",
+      "metric": "macro_f1",
+      "difference": 0.0052038148478134,
+      "ci_low": -0.0056811667352996,
+      "ci_high": 0.0162627610604139,
+      "p_value": 0.347,
+      "p_value_holm": 1.0,
+      "significant_at_0.05_holm": false
+    },
+    {
+      "model_a": "baseline",
+      "model_b": "federated_r8",
+      "metric": "macro_auroc",
+      "difference": 0.0019005356048993,
+      "ci_low": -0.0022082698017063,
+      "ci_high": 0.0056864359953649,
+      "p_value": 0.366,
+      "p_value_holm": 1.0,
+      "significant_at_0.05_holm": false
+    },
+    {
+      "model_a": "baseline",
+      "model_b": "federated_r8",
+      "metric": "macro_f1",
+      "difference": 0.0034802884913948,
+      "ci_low": -0.0080745467566984,
+      "ci_high": 0.0155182707425368,
+      "p_value": 0.543,
+      "p_value_holm": 1.0,
+      "significant_at_0.05_holm": false
+    },
+    {
+      "model_a": "federated_r8",
+      "model_b": "federated_r3",
+      "metric": "macro_auroc",
+      "difference": 0.0121349961049386,
+      "ci_low": 0.0091777026034686,
+      "ci_high": 0.0151125796692759,
+      "p_value": 0.0005,
+      "p_value_holm": 0.002,
+      "significant_at_0.05_holm": true
+    },
+    {
+      "model_a": "federated_r8",
+      "model_b": "federated_r3",
+      "metric": "macro_f1",
+      "difference": 0.0125865746997404,
+      "ci_low": 0.0039945943793046,
+      "ci_high": 0.0209409095102652,
+      "p_value": 0.003,
+      "p_value_holm": 0.012,
+      "significant_at_0.05_holm": true
+    }
+  ],
+  "significant_differences": [
+    {
+      "model_a": "federated_r8",
+      "model_b": "federated_r3",
+      "metric": "macro_auroc"
+    },
+    {
+      "model_a": "federated_r8",
+      "model_b": "federated_r3",
+      "metric": "macro_f1"
+    }
+  ]
+}

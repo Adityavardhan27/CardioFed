@@ -1,5 +1,15 @@
 
-"""Prepare PTB-XL signals using memory-mapped storage."""
+"""Stage 1 of data preparation: filter and normalise PTB-XL signals.
+
+Reads the 100 Hz records, applies a 0.5-40 Hz band-pass filter and per-record,
+per-lead z-score normalisation, and stores memory-mapped arrays.
+
+Labels written here still contain NORM together with abnormal classes. The
+reported CardioFed results additionally require stage 2:
+    python rebuild_labels.py --processed <this --out> --out data/processed
+
+Existing outputs are never overwritten unless --overwrite is given.
+"""
 
 import argparse
 import os
@@ -14,11 +24,20 @@ from src.preprocessing import (
     preprocess_signal,
     CLASSES
 )
+from src.io_utils import guard_outputs
+
+OUTPUT_FILES = [
+    "X.npy", "y.npy", "folds.npy", "sites.npy", "ecg_ids.npy",
+    "processed_metadata.csv",
+]
 
 
-def main(root, output):
+def main(root, output, overwrite=False):
 
-    os.makedirs(output, exist_ok=True)
+    guard_outputs(
+        [os.path.join(output, f) for f in OUTPUT_FILES],
+        overwrite=overwrite
+    )
 
     print("\nLoading PTB-XL metadata...")
 
@@ -135,9 +154,11 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "--out",
-        default="data/processed"
+        default="data/stage1"
     )
+
+    parser.add_argument("--overwrite", action="store_true")
 
     args = parser.parse_args()
 
-    main(args.root, args.out)
+    main(args.root, args.out, args.overwrite)

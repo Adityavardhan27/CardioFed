@@ -3,6 +3,21 @@
 
 Four simulated clients are formed using PTB-XL recording sites.
 All ECG records belonging to one patient are assigned to one client.
+
+Simulation assumptions (state these when reporting results):
+  * Positive-class weights are computed from the pooled training labels of
+    all clients (a shared aggregate statistic).
+  * Model selection and threshold tuning use one central validation set
+    (fold 9).
+  * BatchNorm statistics are averaged by FedAvg like all other buffers.
+  * Each client creates a fresh Adam optimiser every round.
+  * No differential privacy or secure aggregation is implemented.
+
+Reported runs (rounds 3 and 8) were produced before outputs were named per
+run; they live at results/checkpoints/federated_3round_best.pt and
+results/checkpoints/federated_best.pt. New runs write
+<output>/checkpoints/<run-name>_best.pt and refuse to overwrite existing files
+unless --overwrite is given.
 """
 
 import os
@@ -22,6 +37,7 @@ from tqdm import tqdm
 from src.model import MultiScaleResidualECGNet
 from src.dataset import ECGDataset
 from src.preprocessing import CLASSES
+from src.io_utils import guard_outputs
 
 
 # ---------------------------------------------------------
@@ -38,7 +54,10 @@ def set_seed(seed=42):
 # Patient-level client partitioning
 # ---------------------------------------------------------
 
-def create_client_partitions():
+def create_client_partitions(
+    metadata_path="data/raw/ptb-xl/ptbxl_database.csv",
+    processed="data/processed"
+):
     """
     Assign each training patient to one client.
 
@@ -52,12 +71,10 @@ def create_client_partitions():
     are assigned according to that patient's most frequent site.
     """
 
-    metadata = pd.read_csv(
-        "data/raw/ptb-xl/ptbxl_database.csv"
-    )
+    metadata = pd.read_csv(metadata_path)
 
-    ecg_ids = np.load("data/processed/ecg_ids.npy")
-    folds = np.load("data/processed/folds.npy")
+    ecg_ids = np.load(f"{processed}/ecg_ids.npy")
+    folds = np.load(f"{processed}/folds.npy")
 
     processed = metadata.set_index("ecg_id").loc[ecg_ids].copy()
 
@@ -292,18 +309,27 @@ def main(args):
     print("Device:", device)
     print("Classes:", CLASSES)
 
-    os.makedirs("results/checkpoints", exist_ok=True)
-    os.makedirs("results/metrics", exist_ok=True)
+    run_name = args.run_name or f"federated_{args.rounds}round"
+    checkpoint_path = f"{args.output}/checkpoints/{run_name}_best.pt"
+    history_path = f"{args.output}/metrics/{run_name}_history.json"
+    summary_path = f"{args.output}/metrics/{run_name}_summary.json"
+
+    guard_outputs(
+        [checkpoint_path, history_path, summary_path],
+        overwrite=args.overwrite
+    )
+
+    print("Run name:", run_name)
 
     # Build patient-disjoint clients.
-    partitions = create_client_partitions()
+    partitions = create_client_partitions(args.metadata, args.processed)
 
     # Load validation data: fold 9 only.
-    folds = np.load("data/processed/folds.npy")
+    folds = np.load(f"{args.processed}/folds.npy")
     val_indices = np.where(folds == 9)[0]
 
     val_dataset = ECGDataset(
-        "data/processed",
+        args.processed,
         val_indices
     )
 
@@ -315,7 +341,7 @@ def main(args):
     )
 
     # Compute positive class weights using training data only.
-    y = np.load("data/processed/y.npy")
+    y = np.load(f"{args.processed}/y.npy")
 
     train_indices = np.where(folds <= 8)[0]
     y_train = y[train_indices]
@@ -342,7 +368,7 @@ def main(args):
 
     for client_id, indices in partitions.items():
         dataset = ECGDataset(
-            "data/processed",
+            args.processed,
             indices
         )
 
@@ -464,7 +490,7 @@ def main(args):
                     "best_val_auroc": best_val_auc,
                     "classes": CLASSES
                 },
-                "results/checkpoints/federated_best.pt"
+                checkpoint_path
             )
 
             print("Best federated model checkpoint saved.")
@@ -472,10 +498,7 @@ def main(args):
         del client_states
 
     # Save training history.
-    with open(
-        "results/metrics/federated_history.json",
-        "w"
-    ) as file:
+    with open(history_path, "w") as file:
         json.dump(history, file, indent=4)
 
     summary = {
@@ -483,26 +506,25 @@ def main(args):
         "communication_rounds": args.rounds,
         "local_epochs": args.local_epochs,
         "batch_size": args.batch_size,
+        "learning_rate": args.learning_rate,
+        "seed": args.seed,
         "client_sizes": {
             str(key + 1): value
             for key, value in client_sizes.items()
         },
         "best_validation_macro_auroc": best_val_auc,
-        "best_checkpoint": "results/checkpoints/federated_best.pt"
+        "best_checkpoint": checkpoint_path
     }
 
-    with open(
-        "results/metrics/federated_summary.json",
-        "w"
-    ) as file:
+    with open(summary_path, "w") as file:
         json.dump(summary, file, indent=4)
 
     print("\n" + "=" * 55)
     print("FEDERATED TRAINING COMPLETED")
     print("=" * 55)
     print("Best validation macro-AUROC:", round(best_val_auc, 4))
-    print("Checkpoint: results/checkpoints/federated_best.pt")
-    print("History: results/metrics/federated_history.json")
+    print("Checkpoint:", checkpoint_path)
+    print("History:", history_path)
 
 
 if __name__ == "__main__":
@@ -513,5 +535,15 @@ if __name__ == "__main__":
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--learning-rate", type=float, default=0.0005)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--processed", default="data/processed")
+    parser.add_argument(
+        "--metadata", default="data/raw/ptb-xl/ptbxl_database.csv"
+    )
+    parser.add_argument("--output", default="results")
+    parser.add_argument(
+        "--run-name", default=None,
+        help="Output name prefix (default: federated_<rounds>round)."
+    )
+    parser.add_argument("--overwrite", action="store_true")
 
     main(parser.parse_args())

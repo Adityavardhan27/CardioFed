@@ -1,0 +1,179 @@
+{
+  "test_records": 2157,
+  "test_patients": 1876,
+  "bootstrap": {
+    "resampling_unit": "patient",
+    "n_boot": 2000,
+    "seed": 0,
+    "interval": "95% percentile"
+  },
+  "thresholds": "validation-tuned thresholds from each original evaluation JSON",
+  "p_value_floor": "p-values are floored at 1/n_boot = 0.0005",
+  "reproduction_max_abs_diff": {
+    "baseline": 0.0,
+    "multiscale": 0.0,
+    "federated_r3": 0.0,
+    "federated_r8": 0.0,
+    "multiscale_legacy": 0.0
+  },
+  "overall": [
+    {
+      "model": "baseline",
+      "label": "Baseline 1D CNN (centralized)",
+      "macro_auroc": 0.9076250377841873,
+      "macro_auroc_ci_low": 0.8989827080474452,
+      "macro_auroc_ci_high": 0.9159484776199044,
+      "macro_f1": 0.709745110625976,
+      "macro_f1_ci_low": 0.6923665486628422,
+      "macro_f1_ci_high": 0.7266951792758165,
+      "hamming_loss": 0.13064441353732034,
+      "subset_accuracy": 0.5822902178952248
+    },
+    {
+      "model": "multiscale",
+      "label": "Multi-Scale Residual CNN (centralized)",
+      "macro_auroc": 0.9060893882951767,
+      "macro_auroc_ci_low": 0.8972518600080399,
+      "macro_auroc_ci_high": 0.9147702167843875,
+      "macro_f1": 0.7045412957781626,
+      "macro_f1_ci_low": 0.6880938937066546,
+      "macro_f1_ci_high": 0.7205512295675777,
+      "hamming_loss": 0.13657858136300416,
+      "subset_accuracy": 0.5762633286972647
+    },
+    {
+      "model": "federated_r3",
+      "label": "Multi-Scale Residual CNN (FedAvg, 3 rounds)",
+      "macro_auroc": 0.8935895060743494,
+      "macro_auroc_ci_low": 0.8840955677750295,
+      "macro_auroc_ci_high": 0.9026185446861512,
+      "macro_f1": 0.6936782474348407,
+      "macro_f1_ci_low": 0.6760090045313585,
+      "macro_f1_ci_high": 0.7108155566650576,
+      "hamming_loss": 0.14204914232730645,
+      "subset_accuracy": 0.5577190542420027
+    },
+    {
+      "model": "federated_r8",
+      "label": "Multi-Scale Residual CNN (FedAvg, 8 rounds)",
+      "macro_auroc": 0.905724502179288,
+      "macro_auroc_ci_low": 0.8971125035595092,
+      "macro_auroc_ci_high": 0.9141162098243729,
+      "macro_f1": 0.7062648221345812,
+      "macro_f1_ci_low": 0.6891681777882284,
+      "macro_f1_ci_high": 0.7226532334670772,
+      "hamming_loss": 0.13092257765414927,
+      "subset_accuracy": 0.5901715345387112
+    },
+    {
+      "model": "multiscale_legacy",
+      "label": "Multi-Scale Residual CNN (legacy run, training code not retained)",
+      "macro_auroc": 0.9052327604830879,
+      "macro_auroc_ci_low": 0.8961059039257268,
+      "macro_auroc_ci_high": 0.9137310025614036,
+      "macro_f1": 0.7121005771951527,
+      "macro_f1_ci_low": 0.6949667157944135,
+      "macro_f1_ci_high": 0.7283227995065852,
+      "hamming_loss": 0.13240611961057025,
+      "subset_accuracy": 0.5869262865090403
+    }
+  ],
+  "paired_differences": [
+    {
+      "model_a": "federated_r8",
+      "model_b": "multiscale",
+      "question": "Federated vs centralized training, same architecture",
+      "metric": "macro_auroc",
+      "difference": -0.00036488611588869624,
+      "ci_low": -0.0050403824673959045,
+      "ci_high": 0.0043804323633032435,
+      "p_value": 0.88,
+      "p_value_holm": 1.0,
+      "significant_at_0.05_holm": false
+    },
+    {
+      "model_a": "federated_r8",
+      "model_b": "multiscale",
+      "question": "Federated vs centralized training, same architecture",
+      "metric": "macro_f1",
+      "difference": 0.001723526356418592,
+      "ci_low": -0.009827238116834013,
+      "ci_high": 0.012568466657386685,
+      "p_value": 0.785,
+      "p_value_holm": 1.0,
+      "significant_at_0.05_holm": false
+    },
+    {
+      "model_a": "baseline",
+      "model_b": "multiscale",
+      "question": "Baseline CNN vs multi-scale CNN, both centralized",
+      "metric": "macro_auroc",
+      "difference": 0.0015356494890106376,
+      "ci_low": -0.0025044220782752618,
+      "ci_high": 0.005478500311394599,
+      "p_value": 0.458,
+      "p_value_holm": 1.0,
+      "significant_at_0.05_holm": false
+    },
+    {
+      "model_a": "baseline",
+      "model_b": "multiscale",
+      "question": "Baseline CNN vs multi-scale CNN, both centralized",
+      "metric": "macro_f1",
+      "difference": 0.005203814847813404,
+      "ci_low": -0.005681166735299617,
+      "ci_high": 0.01626276106041394,
+      "p_value": 0.347,
+      "p_value_holm": 1.0,
+      "significant_at_0.05_holm": false
+    },
+    {
+      "model_a": "baseline",
+      "model_b": "federated_r8",
+      "question": "Centralized baseline vs federated multi-scale",
+      "metric": "macro_auroc",
+      "difference": 0.0019005356048993338,
+      "ci_low": -0.0022082698017063308,
+      "ci_high": 0.005686435995364998,
+      "p_value": 0.366,
+      "p_value_holm": 1.0,
+      "significant_at_0.05_holm": false
+    },
+    {
+      "model_a": "baseline",
+      "model_b": "federated_r8",
+      "question": "Centralized baseline vs federated multi-scale",
+      "metric": "macro_f1",
+      "difference": 0.0034802884913948118,
+      "ci_low": -0.008074546756698404,
+      "ci_high": 0.015518270742536847,
+      "p_value": 0.543,
+      "p_value_holm": 1.0,
+      "significant_at_0.05_holm": false
+    },
+    {
+      "model_a": "federated_r8",
+      "model_b": "federated_r3",
+      "question": "Effect of 8 vs 3 communication rounds",
+      "metric": "macro_auroc",
+      "difference": 0.012134996104938622,
+      "ci_low": 0.009177702603468677,
+      "ci_high": 0.01511257966927598,
+      "p_value": 0.0005,
+      "p_value_holm": 0.002,
+      "significant_at_0.05_holm": true
+    },
+    {
+      "model_a": "federated_r8",
+      "model_b": "federated_r3",
+      "question": "Effect of 8 vs 3 communication rounds",
+      "metric": "macro_f1",
+      "difference": 0.01258657469974045,
+      "ci_low": 0.003994594379304611,
+      "ci_high": 0.020940909510265213,
+      "p_value": 0.003,
+      "p_value_holm": 0.012,
+      "significant_at_0.05_holm": true
+    }
+  ]
+}

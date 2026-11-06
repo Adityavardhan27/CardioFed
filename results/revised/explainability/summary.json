@@ -1,0 +1,89 @@
+{
+  "models": {
+    "multiscale": "Multi-Scale Residual CNN (centralized)",
+    "federated_r8": "Multi-Scale Residual CNN (FedAvg, 8 rounds)"
+  },
+  "selection_rule": "test ECGs positive for the class whose full predicted label set equals the true set for both models; seeded random sample",
+  "seed": 0,
+  "ig_steps": 64,
+  "baseline": "zeros",
+  "examples_per_class_aggregate": 30,
+  "figures_per_class": 3,
+  "candidates_per_class": {
+    "CD": 134,
+    "HYP": 50,
+    "MI": 148,
+    "NORM": 761,
+    "STTC": 134
+  },
+  "completeness_error": {
+    "federated_r8": {
+      "mean": 0.00768581948939985,
+      "50%": 0.002703430957771597,
+      "max": 0.2910958537003687
+    },
+    "multiscale": {
+      "mean": 0.014536610233470148,
+      "50%": 0.0064330614583716274,
+      "max": 0.4211484662419948
+    }
+  },
+  "deletion_test": [
+    {
+      "model": "federated_r8",
+      "fraction": 0.01,
+      "drop_top": 2.6372313385953507,
+      "drop_random": 0.028389779726664226,
+      "fraction_top_beats_random": 1.0
+    },
+    {
+      "model": "federated_r8",
+      "fraction": 0.02,
+      "drop_top": 3.412450165798267,
+      "drop_random": 0.056949819723765054,
+      "fraction_top_beats_random": 1.0
+    },
+    {
+      "model": "federated_r8",
+      "fraction": 0.05,
+      "drop_top": 4.408302899599075,
+      "drop_random": 0.14942374308904013,
+      "fraction_top_beats_random": 1.0
+    },
+    {
+      "model": "federated_r8",
+      "fraction": 0.1,
+      "drop_top": 5.181720446596543,
+      "drop_random": 0.2833747355143229,
+      "fraction_top_beats_random": 1.0
+    },
+    {
+      "model": "multiscale",
+      "fraction": 0.01,
+      "drop_top": 3.1244012034436066,
+      "drop_random": 0.014210609793663025,
+      "fraction_top_beats_random": 1.0
+    },
+    {
+      "model": "multiscale",
+      "fraction": 0.02,
+      "drop_top": 4.118038597404957,
+      "drop_random": 0.02395809809366862,
+      "fraction_top_beats_random": 1.0
+    },
+    {
+      "model": "multiscale",
+      "fraction": 0.05,
+      "drop_top": 5.53420606503884,
+      "drop_random": 0.06049181262652079,
+      "fraction_top_beats_random": 1.0
+    },
+    {
+      "model": "multiscale",
+      "fraction": 0.1,
+      "drop_top": 6.6975623598694805,
+      "drop_random": 0.1385167614618937,
+      "fraction_top_beats_random": 1.0
+    }
+  ]
+}

@@ -1,6 +1,15 @@
 
-"""Predict diagnostic classes from a processed CardioFed ECG CSV."""
+"""Predict diagnostic classes from a processed CardioFed ECG CSV.
 
+The CSV must contain 1000 samples of the 12 leads that have ALREADY been
+band-pass filtered and z-score normalised by the CardioFed pipeline.
+
+Uses the primary (reproducible) multi-scale model and its validation-tuned
+thresholds by default. Writes <output-dir>/ECG_<id>_prediction.json and never
+overwrites an existing file unless --overwrite is given.
+"""
+
+import argparse
 import json
 import numpy as np
 import pandas as pd
@@ -10,6 +19,8 @@ from pathlib import Path
 
 from src.model import MultiScaleResidualECGNet
 from src.preprocessing import CLASSES
+from src.io_utils import guard_outputs
+from src.model_registry import MODELS, DEFAULT_CENTRALIZED
 
 
 # --------------------------------------------------
@@ -18,16 +29,14 @@ from src.preprocessing import CLASSES
 
 ROOT = Path(__file__).resolve().parent.parent
 
-CHECKPOINT_PATH = ROOT / "results/checkpoints/multiscale_best.pt"
+CHECKPOINT_PATH = ROOT / MODELS[DEFAULT_CENTRALIZED]["checkpoint"]
 
-EVALUATION_PATH = (
-    ROOT / "results/metrics/multiscale_final_evaluation.json"
-)
+EVALUATION_PATH = ROOT / MODELS[DEFAULT_CENTRALIZED]["evaluation"]
 
 DATA_DIR = ROOT / "data/processed"
 
-OUTPUT_DIR = ROOT / "results/examples"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+EXAMPLES_DIR = ROOT / "results/examples"
+OUTPUT_DIR = ROOT / "results/revised/examples"
 
 
 # --------------------------------------------------
@@ -40,7 +49,7 @@ LEADS = [
     "V1", "V2", "V3", "V4", "V5", "V6"
 ]
 
-TARGET_CSV = OUTPUT_DIR / "ECG_63.csv"
+TARGET_CSV = EXAMPLES_DIR / "ECG_63.csv"
 
 
 # --------------------------------------------------
@@ -169,7 +178,7 @@ def predict(model, signal, thresholds, device):
 # MAIN
 # --------------------------------------------------
 
-def main():
+def main(args):
 
     device = torch.device(
         "cuda" if torch.cuda.is_available() else "cpu"
@@ -180,7 +189,10 @@ def main():
 
     model, thresholds = load_model(device)
 
-    signal, ecg_id = load_ecg_csv(TARGET_CSV)
+    signal, ecg_id = load_ecg_csv(args.csv)
+
+    output_path = Path(args.output_dir) / f"ECG_{ecg_id}_prediction.json"
+    guard_outputs([output_path], overwrite=args.overwrite)
 
     probabilities, predictions = predict(
         model,
@@ -229,10 +241,9 @@ def main():
     output = {
         "ecg_id": ecg_id,
         "model": "Multi-Scale Residual CNN",
+        "checkpoint": MODELS[DEFAULT_CENTRALIZED]["checkpoint"],
         "predictions": results
     }
-
-    output_path = OUTPUT_DIR / f"ECG_{ecg_id}_prediction.json"
 
     with open(output_path, "w") as file:
         json.dump(output, file, indent=2)
@@ -244,4 +255,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--csv", default=str(TARGET_CSV))
+    parser.add_argument("--output-dir", default=str(OUTPUT_DIR))
+    parser.add_argument("--overwrite", action="store_true")
+    main(parser.parse_args())
