@@ -19,7 +19,9 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from src.dataset import make_loaders
+from torch.utils.data import DataLoader
+
+from src.dataset import ECGDataset, make_loaders
 from src.model import MultiScaleResidualECGNet
 from src.evaluate import predict_probs, compute_metrics
 from src.io_utils import guard_outputs
@@ -52,8 +54,16 @@ def train(
     output="results/scheduler_experiment",
     seed=42,
     processed="data/processed",
-    overwrite=False
+    overwrite=False,
+    train_indices=None
 ):
+    """Train the multi-scale model.
+
+    train_indices: optional subset of training-record indices (e.g. one
+    federated client's data for local-only baselines). When given, only
+    these records are used for training and for the positive-class weights.
+    Validation (fold 9) is unchanged. Default None = all folds 1-8.
+    """
     guard_outputs(
         [
             f"{output}/checkpoints/multiscale_best.pt",
@@ -77,6 +87,28 @@ def train(
         processed_dir=processed,
         batch_size=batch_size
     )
+
+    if train_indices is not None:
+        train_indices = np.asarray(train_indices, dtype=np.int64)
+        folds = np.load(f"{processed}/folds.npy")
+
+        if not np.all(folds[train_indices] <= 8):
+            raise ValueError("train_indices must come from folds 1-8.")
+
+        train_loader = DataLoader(
+            ECGDataset(processed, train_indices),
+            batch_size=batch_size,
+            shuffle=True,
+            num_workers=0,
+            pin_memory=False
+        )
+
+        y_train = np.array(
+            np.load(f"{processed}/y.npy", mmap_mode="r")[train_indices],
+            dtype=np.float32
+        )
+
+        print("Training subset records:", len(train_indices))
 
     model = MultiScaleResidualECGNet(
         n_leads=12,

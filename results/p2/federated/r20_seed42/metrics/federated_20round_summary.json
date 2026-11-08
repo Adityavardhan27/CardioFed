@@ -1,0 +1,16 @@
+{
+    "clients": 4,
+    "communication_rounds": 20,
+    "local_epochs": 1,
+    "batch_size": 16,
+    "learning_rate": 0.0005,
+    "seed": 42,
+    "client_sizes": {
+        "1": 7692,
+        "2": 5060,
+        "3": 3318,
+        "4": 1003
+    },
+    "best_validation_macro_auroc": 0.9141859118300448,
+    "best_checkpoint": "results/p2/federated/r20_seed42/checkpoints/federated_20round_best.pt"
+}

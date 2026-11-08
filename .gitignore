@@ -24,3 +24,7 @@ do
 .env
 .env.*
 !.env.example
+
+# P2 alternative-normalisation dataset (1 GB; regenerate with
+# python -m src.prepare_global_norm --tmp-dir <scratch dir>)
+data/p2_global_norm/

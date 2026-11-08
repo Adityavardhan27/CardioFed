@@ -72,6 +72,9 @@ within each metric):
 - The multi-scale architecture shows no measurable advantage over the
   simpler baseline CNN.
 
+FedAvg-8 had not fully converged. The converged 20-round FedAvg, three
+seeds per arm, and local-only baselines are in Section 10.
+
 **Not supported:** any claim that one of baseline, multiscale or
 federated_r8 is "best". (The original `results/comparison/comparison_summary.json`
 names best models by point estimate; disregard it.)
@@ -223,16 +226,141 @@ and prediction agreement (93/100 identical label sets) therefore measure
 render–digitize round-trip consistency only, not real-world digitization
 performance.
 
-## 10. Limitations
+## 10. P2 experiments: local-only baselines, longer FedAvg, extra seeds
 
-1. Single training seed per model; seed variance is unknown.
-2. The baseline (best = last epoch) and FedAvg-8 (best = last round) may not
-   have converged.
-3. No local-only (per-client) baselines, so the benefit of federation over
-   isolated training is not established.
+The protocol was fixed and committed before training
+(`results/p2/PROTOCOL.md`, including all deviations). Outputs are in
+`results/p2/`; analysis in `results/p2/analysis/`.
+
+Common settings:
+- All models use the multi-scale CNN with the standard data and labels.
+- Thresholds are tuned on the validation fold; the test fold is evaluated
+  once per model.
+- Local-only models use only their client's training records (folds 1–8,
+  verified in code) and class weights from their own labels.
+- Model selection uses the central validation fold, the same simulation
+  assumption as FedAvg.
+
+### 10.1 FedAvg convergence (20 rounds, 3 seeds)
+
+| Seed | Best round | Best val AUROC | Val AUROC round 8 | Round 20 | Gain after round 8 |
+|---|---|---|---|---|---|
+| 42 | 14 | 0.9142 | 0.9096 | 0.9120 | +0.0046 |
+| 43 | 13 | 0.9139 | 0.9083 | 0.9117 | +0.0056 |
+| 44 | 14 | 0.9139 | 0.9068 | 0.9100 | +0.0067 |
+
+- Validation macro-AUROC rises until about round 13–14, then plateaus or
+  declines slightly while training loss keeps falling. Running more rounds
+  is therefore not expected to help.
+- The 8-round model reported earlier had not fully converged.
+- Seed 42, rounds 1–8, reproduces the original 8-round run bit for bit
+  (validation AUROC and all client losses identical).
+
+Figure: `results/p2/analysis/fedavg_convergence.png`.
+
+### 10.2 Test results (fold 10)
+
+| Model | Seed | Best epoch/round | Macro-AUROC | Macro-F1 | Hamming | Subset acc. |
+|---|---|---|---|---|---|---|
+| Centralized | 42 | 10 | 0.906 | 0.705 | 0.137 | 0.576 |
+| Centralized | 43 | 9 | 0.912 | 0.715 | 0.132 | 0.573 |
+| Centralized | 44 | 8 | 0.913 | 0.720 | 0.128 | 0.594 |
+| FedAvg-20 | 42 | 14 | 0.910 | 0.712 | 0.127 | 0.596 |
+| FedAvg-20 | 43 | 13 | 0.909 | 0.709 | 0.133 | 0.586 |
+| FedAvg-20 | 44 | 14 | 0.910 | 0.719 | 0.131 | 0.574 |
+| Local-only client 1 (7,692 rec.) | 42 | 10 | 0.896 | 0.693 | 0.143 | 0.543 |
+| Local-only client 2 (5,060 rec.) | 42 | 8 | 0.889 | 0.685 | 0.146 | 0.552 |
+| Local-only client 3 (3,318 rec.) | 42 | 8 | 0.873 | 0.666 | 0.167 | 0.489 |
+| Local-only client 4 (1,003 rec.) | 42 | 10 | 0.858 | 0.644 | 0.167 | 0.492 |
+
+Mean ± SD across seeds:
+
+| Arm | Macro-AUROC | Macro-F1 |
+|---|---|---|
+| Centralized | 0.910 ± 0.004 | 0.713 ± 0.008 |
+| FedAvg-20 | 0.910 ± 0.001 | 0.714 ± 0.005 |
+
+Seed-42 centralized (the primary model in Sections 3–9) was the weakest of
+the three centralized seeds. Seed-to-seed variation (up to 0.007 AUROC) is
+larger than several of the between-model differences in Section 3.
+
+Per-class test AUROC (seed 42):
+
+| Model | NORM | MI | STTC | CD | HYP |
+|---|---|---|---|---|---|
+| Centralized | 0.933 | 0.921 | 0.932 | 0.920 | 0.825 |
+| FedAvg-20 | 0.937 | 0.924 | 0.933 | 0.926 | 0.832 |
+| Local client 1 | 0.930 | 0.917 | 0.927 | 0.915 | 0.790 |
+| Local client 2 | 0.922 | 0.890 | 0.922 | 0.900 | 0.812 |
+| Local client 3 | 0.913 | 0.876 | 0.915 | 0.904 | 0.758 |
+| Local client 4 | 0.900 | 0.865 | 0.899 | 0.866 | 0.762 |
+
+Per-class test F1 (seed 42):
+
+| Model | NORM | MI | STTC | CD | HYP |
+|---|---|---|---|---|---|
+| Centralized | 0.838 | 0.735 | 0.741 | 0.751 | 0.457 |
+| FedAvg-20 | 0.852 | 0.733 | 0.752 | 0.754 | 0.472 |
+| Local client 1 | 0.849 | 0.734 | 0.739 | 0.724 | 0.419 |
+| Local client 2 | 0.822 | 0.700 | 0.731 | 0.717 | 0.456 |
+| Local client 3 | 0.824 | 0.674 | 0.718 | 0.732 | 0.383 |
+| Local client 4 | 0.800 | 0.670 | 0.706 | 0.665 | 0.381 |
+
+### 10.3 Pre-specified comparisons
+
+Paired patient-level bootstrap with 2,000 resamples. The primary family is
+seed-matched (seed 42), Holm-corrected across 5 tests per metric.
+
+| Comparison | Δ macro-AUROC [95% CI] | p (Holm) | Δ macro-F1 [95% CI] | p (Holm) |
+|---|---|---|---|---|
+| C1: FedAvg-20 − centralized | +0.0041 [−0.0001, 0.0084] | 0.055 | +0.0079 [−0.0026, 0.0187] | 0.145 |
+| C2: FedAvg-20 − local client 1 | +0.0145 [0.0104, 0.0190] | 0.0025 | +0.0193 [0.0086, 0.0301] | 0.0025 |
+| C2: FedAvg-20 − local client 2 | +0.0208 [0.0157, 0.0258] | 0.0025 | +0.0273 [0.0152, 0.0393] | 0.0025 |
+| C2: FedAvg-20 − local client 3 | +0.0370 [0.0305, 0.0433] | 0.0025 | +0.0464 [0.0336, 0.0588] | 0.0025 |
+| C2: FedAvg-20 − local client 4 | +0.0518 [0.0428, 0.0600] | 0.0025 | +0.0681 [0.0523, 0.0833] | 0.0025 |
+| S1 (supplementary): FedAvg-20 − centralized, 3 seeds each | −0.0005 [−0.0031, 0.0021] | 0.70 | +0.0008 [−0.0061, 0.0076] | 0.86 |
+
+The p-value floor is 1/2,000 before Holm adjustment.
+
+Descriptive: each local model on its own site's test subset, compared with
+FedAvg-20 and centralized on the same subset (mean of 3 seeds for FedAvg-20
+and centralized):
+
+| Client (site) | Local-only | FedAvg-20 | Centralized |
+|---|---|---|---|
+| 1 (site 0, n = 483) | 0.925 | 0.928 | 0.925 |
+| 2 (site 1, n = 597) | 0.903 | 0.918 | 0.918 |
+| 3 (site 2, n = 867) | 0.859 | 0.883 | 0.881 |
+| 4 (other sites, n = 210) | 0.874 | 0.919 | 0.927 |
+
+**Supported conclusions**
+- FedAvg-20 outperforms every client's local-only model on the full test
+  fold, for both macro-AUROC and macro-F1 (all Holm-adjusted p = 0.0025).
+- The gain grows as the client gets smaller, from +0.015 AUROC for the
+  largest client to +0.052 for the smallest.
+- On each client's own-site test data, FedAvg-20 is at least as good as the
+  local model (descriptive, single local seed).
+- No detectable difference between FedAvg-20 and centralized training:
+  seed 42 p = 0.055 (not significant); three seeds Δ = −0.0005.
+
+**Not supported**
+- That FedAvg is better than centralized training.
+- Any privacy guarantee.
+- Local-only seed variability, since only one seed was run per client.
+
+## 11. Limitations
+
+1. Local-only baselines have one seed per client. Centralized and FedAvg-20
+   have three seeds each. The baseline CNN and FedAvg-3/8 have one.
+2. The baseline CNN (best = last epoch) may not have converged. FedAvg-8 had
+   not converged (see 10.1).
+3. Local-only and FedAvg models select checkpoints and thresholds on the
+   central validation fold, which a real isolated site would not have.
 4. The test fold was used for several models and analyses. All results are
    reported; none were selected by test performance.
-5. Per-record normalisation discards absolute amplitude.
+5. Per-record normalisation discards absolute amplitude. An alternative
+   (training-set per-lead normalisation, `src/prepare_global_norm.py`) was
+   prepared but not trained or evaluated.
 6. Non-standard label policy (Section 1).
 7. Hyper-parameters of the baseline and federated runs other than those
    recorded in history and summary files are assumed to be script defaults.
