@@ -95,4 +95,36 @@ Seed-to-seed variability is reported as mean ± SD across seeds.
 
 ## 7. Deviations
 
-(none yet)
+1. **Scope reduced by user instruction (2026-11-08)**, after the first
+   session was interrupted while the job queue was running.
+   - *Kept:* local-only baselines with seed 42 (one per client), and FedAvg
+     for at least 10 rounds.
+   - *Dropped:* additional local-only seeds (43, 44) and E4 (alternative
+     normalisation).
+   - *Consequence for comparisons:* the primary comparisons (C1, C2) became
+     seed-matched on seed 42, with Holm correction across those five tests.
+     The three-seed FedAvg vs centralized comparison is supplementary. C3 was
+     not run.
+   - The extra runs that had already finished (centralized seeds 43/44,
+     FedAvg seeds 43/44) are reported, not discarded.
+2. **Interrupted runs.**
+   - Local-only clients 3 and 4 (seed 42) were interrupted at epochs 7 and 8
+     by the session ending. They were rerun from scratch into
+     `results/p2/local/client{3,4}_seed42_complete/`.
+   - Training on CPU is deterministic only for a fixed number of threads.
+     The first attempts used 2 threads; the reruns used 4 threads
+     (`OMP_NUM_THREADS=4`). Their trajectories therefore differ slightly
+     (e.g. client 3, epoch 1 validation AUROC 0.8488 vs 0.8464).
+   - Thread counts of all analysed runs: 2 threads for FedAvg (hard-coded),
+     centralized seeds 43/44 and local clients 1/2; 4 threads for local
+     clients 3/4. The thread count of the original seed-42 centralized run
+     was not recorded.
+   - The interrupted folders (`client3_seed42`, `client4_seed42`) and the
+     partial seed-43 local runs (`client1_seed43`, `client2_seed43`, plus an
+     empty `local_c3_s43` log) are kept unchanged but not analysed.
+3. **E4 not run.** The globally normalised dataset had been built
+   (`src/prepare_global_norm.py`, git-ignored, regenerable), but no model was
+   trained on it.
+4. **FedAvg rounds.** 20 rounds were run (minimum 10 required). Validation
+   macro-AUROC peaked at rounds 13–14 in all three seeds and did not improve
+   afterwards, so no further rounds were run.

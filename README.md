@@ -11,10 +11,13 @@ Integrated-Gradients explanations, and a Streamlit demo.
 > treatment decisions.
 
 **Verified results, limitations and supported conclusions: see
-[RESULTS.md](RESULTS.md).** In short: FedAvg after 8 rounds is statistically
-indistinguishable from centralized training of the same model
-(test macro-AUROC 0.906 vs 0.906), and the multi-scale CNN shows no measurable
-advantage over the baseline CNN.
+[RESULTS.md](RESULTS.md).** In short:
+- FedAvg (20 rounds, converging at rounds 13–14) shows no detectable
+  difference from centralized training of the same model (3 seeds each: test
+  macro-AUROC 0.910 vs 0.910).
+- FedAvg significantly outperforms every client's local-only model, by
+  +0.015 to +0.052 macro-AUROC; the gain is largest for the smallest client.
+- The multi-scale CNN shows no measurable advantage over the baseline CNN.
 
 ---
 
@@ -135,6 +138,44 @@ python -m src.predict_ecg                            # single-ECG demo predictio
 
 Run `statistical_analysis` before `compare_models`.
 
+## 5b. P2 experiments (local-only baselines, FedAvg convergence, seeds)
+
+The protocol was written and committed before training. It records every
+deviation, including the scope reduction and the interrupted runs:
+[results/p2/PROTOCOL.md](results/p2/PROTOCOL.md). All outputs are under
+`results/p2/`; per-run logs are in `results/p2/logs/`.
+
+CPU training is deterministic only for a fixed thread count, so set
+`OMP_NUM_THREADS` as shown. FedAvg hard-codes 2 threads.
+
+```bash
+# FedAvg, 20 rounds (seeds 42, 43, 44)
+python -m src.federated_train --rounds 20 --seed 42 \
+    --output results/p2/federated/r20_seed42 --run-name federated_20round
+
+# Centralized multi-scale, extra seeds (seed 42 = existing primary run)
+OMP_NUM_THREADS=2 python -m src.train_multiscale --seed 43 \
+    --output results/p2/centralized/seed43
+
+# Local-only baseline for client k (1-4), own data only
+OMP_NUM_THREADS=2 python -m src.local_training --client 1 --seed 42 \
+    --output results/p2/local/client1_seed42
+#   (clients 3 and 4 were rerun with OMP_NUM_THREADS=4 into
+#    results/p2/local/client{3,4}_seed42_complete)
+
+# Standard evaluation of any checkpoint (validation thresholds, test once)
+python -m src.evaluate_checkpoint \
+    --checkpoint results/p2/local/client1_seed42/checkpoints/multiscale_best.pt \
+    --output-dir results/p2/local/client1_seed42/evaluation
+
+# Pre-specified comparisons, convergence and figures
+python -m src.p2_analysis            # writes results/p2/analysis/
+```
+
+`src/prepare_global_norm.py` builds an alternative (training-set per-lead)
+normalisation of the data. It was not used for any trained model; the
+experiment was dropped from scope.
+
 ## 6. Federated learning setup
 
 `src/federated_train.py` forms 4 clients from training patients by their
@@ -190,6 +231,8 @@ src/final_evaluation*.py, evaluate_scheduler_experiment.py
 src/model_registry.py, thresholds.py, io_utils.py, evaluate.py
 src/statistical_analysis.py, per_site_evaluation.py,
     robustness_evaluation.py, explainability_v2.py, compare_models.py
+src/local_training.py, evaluate_checkpoint.py, p2_analysis.py,
+    prepare_global_norm.py             P2 experiments
 src/app.py                             Streamlit demo
 tests/                                 pytest suite
 results/                               original artifacts (unchanged)
