@@ -49,7 +49,31 @@ The `tests/` suite covers:
   client partition sizes, and every reported test metric recomputed from its
   checkpoint.
 
-The data-dependent tests skip automatically when the data are absent.
+The data-dependent tests skip automatically when the data or checkpoints
+are absent, **or present only as Git LFS pointer files** (see "Cloning and
+Git LFS" below). Run `git lfs pull` first to execute them.
+
+### Cloning and Git LFS
+
+The data arrays and all model checkpoints are stored with Git LFS
+(`.gitattributes`): 24 unique objects, 1.18 GB in total (`data/processed/X.npy`
+is 1,026 MB; the 19 checkpoints are 149 MB together). `data/` also contains
+the raw PTB-XL 1.0.3 records as ordinary Git files (43,612 files), so the
+repository itself is large. A full `git lfs pull` counts against the GitHub
+LFS bandwidth allowance of the repository owner; check your plan's limits.
+
+```bash
+git lfs install
+# Pointer files only (small, fast); enough to read the code and run the unit tests:
+GIT_LFS_SKIP_SMUDGE=1 git clone https://github.com/Adityavardhan27/CardioFed.git
+# PowerShell:  $env:GIT_LFS_SKIP_SMUDGE = "1"; git clone <url>
+cd CardioFed
+git lfs pull --include="*.pt"      # checkpoints only (149 MB)
+git lfs pull                         # everything (1.18 GB)
+```
+
+Without the real files, the data-dependent tests are skipped and the
+analysis scripts cannot run; they are not broken.
 
 ## 2. Data pipeline
 
@@ -87,6 +111,12 @@ Every training, evaluation and analysis script **refuses to overwrite an
 existing output file**. Pass a new output path, or `--overwrite` if replacement
 is intentional. `rebuild_labels.py` writes to a separate directory and only
 rewrites its input with an explicit `--in-place` flag.
+
+Exception: the exploratory scripts listed in Section 8, and the legacy
+`src/explainability.py`, `src/export_ecg.py` and
+`src/select_100_test_records.py`, do **not** have this guard and will
+overwrite their previous output (mostly under `results/examples/` and
+`results/plots/`).
 
 ## 4. Models and how each artifact was produced
 
@@ -143,7 +173,9 @@ Run `statistical_analysis` before `compare_models`.
 The protocol was written and committed before training. It records every
 deviation, including the scope reduction and the interrupted runs:
 [results/p2/PROTOCOL.md](results/p2/PROTOCOL.md). All outputs are under
-`results/p2/`; per-run logs are in `results/p2/logs/`.
+`results/p2/`; per-run training histories are in
+`results/p2/*/*/metrics/*_history.json`. Console logs (`*.log`) are
+gitignored and were not committed.
 
 CPU training is deterministic only for a fixed thread count, so set
 `OMP_NUM_THREADS` as shown. FedAvg hard-codes 2 threads.

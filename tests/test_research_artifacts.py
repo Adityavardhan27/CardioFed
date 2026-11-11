@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from tests.conftest import requires_data
+from tests.conftest import is_real_file, requires_data
 from src.preprocessing import CLASSES
 
 P = "data/processed"
@@ -85,8 +85,8 @@ def test_reported_test_metrics_reproduce(name):
     from src.evaluate import compute_metrics
     from src.thresholds import thresholds_from_evaluation, tune_thresholds
 
-    if not os.path.exists(MODELS[name]["checkpoint"]):
-        pytest.skip("checkpoint not available")
+    if not is_real_file(MODELS[name]["checkpoint"]):
+        pytest.skip("checkpoint not available (missing or Git-LFS pointer)")
     model, _ = load_model(name)
     evaluation, saved = load_evaluation(name)
 
