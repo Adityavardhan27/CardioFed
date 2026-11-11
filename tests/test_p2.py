@@ -6,7 +6,7 @@ import os
 import numpy as np
 import pytest
 
-from tests.conftest import requires_data
+from tests.conftest import is_real_file, requires_data
 
 
 def test_global_norm_filter_matches_main_pipeline():
@@ -35,7 +35,7 @@ def test_local_training_rejects_non_training_indices(tmp_path):
 @requires_data
 def test_global_norm_dataset_alignment():
     d = "data/p2_global_norm"
-    if not os.path.exists(f"{d}/X.npy"):
+    if not is_real_file(f"{d}/X.npy"):
         pytest.skip("E4 dataset not built")
     for name in ("y.npy", "folds.npy", "ecg_ids.npy"):
         np.testing.assert_array_equal(np.load(f"{d}/{name}"), np.load(f"data/processed/{name}"))
