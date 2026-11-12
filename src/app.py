@@ -583,7 +583,7 @@ def plot_ecg(df):
 st.title("❤️ CardioFed")
 
 st.subheader(
-    "Robust and Explainable Multi-Label ECG Classification"
+    "Multi-Label ECG Classification Using a Multi-Scale Residual CNN"
 )
 
 st.markdown(
