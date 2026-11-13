@@ -1,0 +1,83 @@
+[
+  {
+    "epoch": 0,
+    "train_loss": null,
+    "validation_loss": 0.5949354567536802,
+    "validation_auroc": 0.9106910070130614,
+    "validation_macro_f1": 0.7083168391909707,
+    "learning_rate": 1e-05,
+    "note": "Starting checkpoint"
+  },
+  {
+    "epoch": 1,
+    "train_loss": 0.41337122097554696,
+    "validation_loss": 0.6065567981911983,
+    "validation_auroc": 0.9124874443288377,
+    "validation_macro_f1": 0.7153831021643302,
+    "learning_rate": 1e-05
+  },
+  {
+    "epoch": 2,
+    "train_loss": 0.39996932160768456,
+    "validation_loss": 0.6135869354374343,
+    "validation_auroc": 0.9129460906553915,
+    "validation_macro_f1": 0.7166742914711248,
+    "learning_rate": 1e-05
+  },
+  {
+    "epoch": 3,
+    "train_loss": 0.3921962032986045,
+    "validation_loss": 0.6102942653139294,
+    "validation_auroc": 0.913906560646018,
+    "validation_macro_f1": 0.7146377138020045,
+    "learning_rate": 1e-05
+  },
+  {
+    "epoch": 4,
+    "train_loss": 0.3869185022434171,
+    "validation_loss": 0.6227167524110813,
+    "validation_auroc": 0.9136860563914931,
+    "validation_macro_f1": 0.7211770160208956,
+    "learning_rate": 5e-06
+  },
+  {
+    "epoch": 5,
+    "train_loss": 0.38144875833064146,
+    "validation_loss": 0.6171501796631824,
+    "validation_auroc": 0.9138131975867523,
+    "validation_macro_f1": 0.7178053892573171,
+    "learning_rate": 5e-06
+  },
+  {
+    "epoch": 6,
+    "train_loss": 0.3765261193287573,
+    "validation_loss": 0.6479526931563249,
+    "validation_auroc": 0.9145203454017212,
+    "validation_macro_f1": 0.7190143243318778,
+    "learning_rate": 5e-06
+  },
+  {
+    "epoch": 7,
+    "train_loss": 0.3756500823506291,
+    "validation_loss": 0.6338823186055624,
+    "validation_auroc": 0.9136796270251011,
+    "validation_macro_f1": 0.7177615852939467,
+    "learning_rate": 2.5e-06
+  },
+  {
+    "epoch": 8,
+    "train_loss": 0.3757584660814187,
+    "validation_loss": 0.6307097988407234,
+    "validation_auroc": 0.9137113541582659,
+    "validation_macro_f1": 0.7204165799284806,
+    "learning_rate": 2.5e-06
+  },
+  {
+    "epoch": 9,
+    "train_loss": 0.3769695184549268,
+    "validation_loss": 0.6321607397795418,
+    "validation_auroc": 0.912930840504423,
+    "validation_macro_f1": 0.7210211979953225,
+    "learning_rate": 2.5e-06
+  }
+]

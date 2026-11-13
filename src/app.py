@@ -11,6 +11,7 @@ import pandas as pd
 import streamlit as st
 import torch
 import matplotlib.pyplot as plt
+from matplotlib.colors import TwoSlopeNorm
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -18,6 +19,7 @@ sys.path.insert(0, str(ROOT))
 from src.model import MultiScaleResidualECGNet
 from src.preprocessing import CLASSES
 from src.model_registry import MODELS, DEFAULT_CENTRALIZED
+from src.explainability_v2 import integrated_gradients as ig_v2_core
 
 
 # --------------------------------------------------
@@ -420,51 +422,33 @@ def integrated_gradients(
     model,
     signal,
     target_class,
-    steps=32
+    steps=64
 ):
+    """
+    Calculate Integrated Gradients attribution using the validated 64-step midpoint
+    Riemann sum from src/explainability_v2.py.
 
+    Returns:
+        attribution: Tensor of shape [1, 12, 1000]
+        completeness_error: float completeness error fraction
+    """
     model.eval()
-
-    baseline = torch.zeros_like(signal)
-    difference = signal - baseline
-
-    total_gradients = torch.zeros_like(signal)
-
-    for alpha in torch.linspace(
-        0,
-        1,
-        steps,
-        device=signal.device
-    ):
-
-        interpolated = (
-            baseline + alpha * difference
-        ).detach().requires_grad_(True)
-
-        output = model(interpolated)
-
-        score = output[0, target_class]
-
-        gradients = torch.autograd.grad(
-            score,
-            interpolated
-        )[0]
-
-        total_gradients += gradients.detach()
-
-    average_gradients = (
-        total_gradients / steps
+    x = signal[0].detach()
+    attribution, error, _, _ = ig_v2_core(
+        model=model,
+        x=x,
+        target=target_class,
+        steps=steps,
+        batch=steps
     )
-
-    attributions = difference * average_gradients
-
-    return attributions.detach()
+    return attribution.unsqueeze(0), float(error)
 
 
 def plot_integrated_gradients(
     signal,
     attribution,
-    target_name
+    target_name,
+    completeness_error=None
 ):
 
     signal_np = (
@@ -486,39 +470,52 @@ def plot_integrated_gradients(
         constrained_layout=True
     )
 
+    # Display leads from top (Lead I) to bottom (V6), matching explainability_v2.
+    offset = 5.0
     for lead in range(12):
 
         axes[0].plot(
             time,
-            signal_np[lead] + lead * 5,
+            signal_np[lead] - lead * offset,
             linewidth=0.7,
             label=DISPLAY_LEADS[lead]
         )
 
-    axes[0].set_title("12-Lead ECG Waveforms")
+    axes[0].set_title("12-Lead ECG Waveforms", fontsize=12)
     axes[0].set_xlabel("Time (seconds)")
-    axes[0].set_ylabel("Normalized signal + lead offset")
+    axes[0].set_ylabel("ECG Lead (offset)")
+    axes[0].set_xlim(0, 10)
+    axes[0].set_yticks([-lead * offset for lead in range(12)])
+    axes[0].set_yticklabels(DISPLAY_LEADS)
     axes[0].grid(alpha=0.2)
 
+    # Attribution heatmap with identical lead order: Lead I at top, V6 at bottom.
+    lim = float(np.percentile(np.abs(attribution_np), 99.5)) or 1.0
     im = axes[1].imshow(
         attribution_np,
         aspect="auto",
         cmap="seismic",
+        norm=TwoSlopeNorm(vmin=-lim, vcenter=0.0, vmax=lim),
         interpolation="nearest",
-        extent=[0, 10, 12, 0]
+        extent=[0, 10, 11.5, -0.5]
     )
 
-    axes[1].set_title(
-        f"Integrated Gradients Attribution for {target_name}"
-    )
+    if completeness_error is not None:
+        axes[1].set_title(
+            f"Integrated Gradients Attribution for {target_name} "
+            f"(64-step midpoint, completeness error: {completeness_error:.1%})",
+            fontsize=12
+        )
+    else:
+        axes[1].set_title(
+            f"Integrated Gradients Attribution for {target_name} (64-step midpoint)",
+            fontsize=12
+        )
 
     axes[1].set_xlabel("Time (seconds)")
-    axes[1].set_ylabel("ECG lead")
-
-    axes[1].set_yticks(
-        np.arange(0.5, 12.5, 1)
-    )
-
+    axes[1].set_ylabel("ECG Lead")
+    axes[1].set_xlim(0, 10)
+    axes[1].set_yticks(range(12))
     axes[1].set_yticklabels(DISPLAY_LEADS)
 
     fig.colorbar(
@@ -768,17 +765,18 @@ if uploaded_file is not None:
                     f"Calculating Integrated Gradients for {explain_class}..."
                 ):
 
-                    attribution = integrated_gradients(
+                    attribution, completeness_error = integrated_gradients(
                         model,
                         signal.to(DEVICE),
                         target_class=target_index,
-                        steps=32
+                        steps=64
                     )
 
                 attribution_fig = plot_integrated_gradients(
                     signal.to(DEVICE),
                     attribution,
-                    explain_class
+                    explain_class,
+                    completeness_error=completeness_error
                 )
 
                 st.pyplot(
@@ -789,11 +787,12 @@ if uploaded_file is not None:
                 plt.close(attribution_fig)
 
                 st.caption(
-                    "Integrated Gradients estimates how input signal "
-                    "features contribute to the selected model output. "
-                    "Red and blue regions represent positive and negative "
-                    "attribution values respectively. This is a model "
-                    "explanation, not clinical evidence."
+                    f"Integrated Gradients estimates how input signal "
+                    f"features contribute to the selected model output "
+                    f"(64-step midpoint Riemann sum, completeness error: {completeness_error:.2%}). "
+                    f"Red and blue regions represent positive and negative "
+                    f"attribution values respectively. This is a model "
+                    f"explanation, not clinical evidence."
                 )
 
             # --------------------------------------------------
@@ -802,19 +801,21 @@ if uploaded_file is not None:
 
             results = pd.DataFrame({
                 "Class": CLASSES,
-                "Probability": probabilities,
-                "Threshold": thresholds,
-                "Raw Prediction": original,
-                "Final Prediction": final
+                "Probability (%)": (probabilities * 100).round(2),
+                "Threshold (%)": (thresholds * 100).round(2),
+                "Raw Prediction (Thresholds)": [
+                    "Positive (1)" if o == 1 else "Negative (0)"
+                    for o in original
+                ],
+                "Final Prediction (NORM Rule)": [
+                    "Positive (1)" if f == 1 else "Negative (0)"
+                    for f in final
+                ],
+                "Status": [
+                    "NORM Suppressed" if o == 1 and f == 0 else ("Positive" if f == 1 else "Negative")
+                    for o, f in zip(original, final)
+                ]
             })
-
-            results["Probability"] = (
-                results["Probability"] * 100
-            ).round(2)
-
-            results["Threshold"] = (
-                results["Threshold"] * 100
-            ).round(2)
 
             st.dataframe(
                 results,
@@ -836,36 +837,86 @@ if uploaded_file is not None:
             st.bar_chart(chart_df)
 
             # --------------------------------------------------
-            # FINAL CLASSIFICATION
+            # CLASSIFICATION SUMMARY
             # --------------------------------------------------
 
-            predicted_classes = [
+            raw_predicted_classes = [
+                CLASSES[i]
+                for i in range(len(CLASSES))
+                if original[i] == 1
+            ]
+
+            final_predicted_classes = [
                 CLASSES[i]
                 for i in range(len(CLASSES))
                 if final[i] == 1
             ]
 
-            st.markdown("### Final Classification")
+            st.markdown("### Classification Summary")
 
-            if predicted_classes:
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown("**1. Raw Threshold Predictions** *(Independent decision thresholds)*")
+                if raw_predicted_classes:
+                    st.write(", ".join(raw_predicted_classes))
+                else:
+                    st.write("No class crossed its threshold.")
 
-                st.write(
-                    "Predicted positive classes:",
-                    ", ".join(predicted_classes)
-                )
-
-            else:
-
-                st.write(
-                    "No class crossed its classification threshold."
-                )
+            with col2:
+                st.markdown("**2. Final Predictions** *(After post-hoc NORM consistency rule)*")
+                if final_predicted_classes:
+                    st.write(", ".join(final_predicted_classes))
+                else:
+                    st.write("No class predicted positive.")
 
             if not np.array_equal(original, final):
+                st.warning(
+                    "⚠️ **Post-Hoc NORM Consistency Rule Applied:**\n\n"
+                    "The model's raw independent thresholds predicted both **NORM** and abnormal class(es) (**"
+                    + ", ".join([CLASSES[i] for i in range(1, 5) if original[i] == 1])
+                    + "**). Because CardioFed defines NORM as mutually exclusive with abnormal conditions in its label policy, "
+                    "NORM was suppressed (forced to 0) in the final prediction.\n\n"
+                    "- **Effect on this record:** NORM was flipped from Positive (1) to Negative (0).\n"
+                    "- **Fold-10 Test Benchmark Impact:** Resolves all 72 contradictory predictions in the test fold, "
+                    "improving **Subset Accuracy from 57.63% to 58.69%** (+23 exact matches) while slightly lowering **Macro-F1 from 0.7045 to 0.7031** "
+                    "(due to suppressing NORM on records with a false-positive abnormal prediction)."
+                )
 
-                st.info(
-                    "The NORM consistency rule was applied: "
-                    "NORM was suppressed because at least one "
-                    "abnormal class was predicted."
+            with st.expander("ℹ️ Model Benchmark Performance: Raw Thresholds vs. NORM Consistency Rule"):
+                benchmark_df = pd.DataFrame({
+                    "Evaluation Metric": [
+                        "Macro-AUROC",
+                        "Macro-F1",
+                        "Subset Accuracy",
+                        "Hamming Loss",
+                        "Conflicting Predictions (NORM + Abnormal)"
+                    ],
+                    "Raw Thresholds": [
+                        "0.9061",
+                        "0.7045",
+                        "57.63% (1,243 / 2,157)",
+                        "0.1366",
+                        "72 records"
+                    ],
+                    "With NORM Consistency Rule": [
+                        "0.9061",
+                        "0.7031",
+                        "58.69% (1,266 / 2,157)",
+                        "0.1368",
+                        "0 records (resolved)"
+                    ],
+                    "Effect of Rule": [
+                        "Unchanged (probabilities unchanged)",
+                        "-0.0014 (penalizes NORM recall when abnormal is FP)",
+                        "+1.06% (+23 newly exact matches)",
+                        "+0.0002 (slight increase)",
+                        "Enforces clinical mutually-exclusive NORM policy"
+                    ]
+                })
+                st.dataframe(benchmark_df, use_container_width=True, hide_index=True)
+                st.caption(
+                    "Metrics evaluated on the complete fold-10 test set (2,157 records, 1,876 patients) "
+                    "using the primary Multi-Scale Residual CNN (results/scheduler_experiment/checkpoints/multiscale_best.pt)."
                 )
 
             st.caption(
@@ -881,6 +932,7 @@ if uploaded_file is not None:
 
             report = {
                 "model": "Multi-Scale Residual CNN",
+                "checkpoint": str(CHECKPOINT_PATH.relative_to(ROOT)),
                 "input_type": input_mode,
                 "classes": CLASSES,
 
@@ -902,7 +954,10 @@ if uploaded_file is not None:
                 "final_predictions": {
                     name: int(final[i])
                     for i, name in enumerate(CLASSES)
-                }
+                },
+
+                "norm_consistency_rule_applied": bool(not np.array_equal(original, final)),
+                "rule_description": "Post-hoc rule suppressing NORM when any abnormal class is predicted positive."
             }
 
             st.download_button(
