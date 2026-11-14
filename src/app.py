@@ -122,35 +122,141 @@ def load_thresholds():
 # --------------------------------------------------
 
 def prepare_ecg_csv(uploaded_file):
+    """
+    Validate and prepare an uploaded 12-lead ECG CSV for CardioFed inference.
 
-    df = pd.read_csv(uploaded_file)
+    Requirements:
+      - Valid CSV format with exactly 1,000 samples (10 seconds at 100 Hz).
+      - All 12 standard leads must be present in standard order:
+        Lead_I, Lead_II, Lead_III, aVR, aVL, aVF, V1, V2, V3, V4, V5, V6.
+      - Finite numeric values (no NaN, null, or Inf).
+      - Preprocessed signal scaling: signals must be model-ready (0.5-40 Hz bandpass
+        filtered and per-lead zero-mean, unit-variance standardized).
+        Raw physical signals (e.g. unscaled millivolts with std << 1 or raw ADC/microvolts
+        with std >> 1) or constant flatlines are rejected with informative error messages.
+    """
 
+    try:
+        df = pd.read_csv(uploaded_file)
+    except Exception as error:
+        raise ValueError(f"Could not parse uploaded CSV file: {error}")
+
+    if df.empty or len(df.columns) == 0:
+        raise ValueError("The uploaded CSV file is empty.")
+
+    # 1. Check for missing lead columns
     missing = [
         lead for lead in LEADS
         if lead not in df.columns
     ]
-
     if missing:
         raise ValueError(
-            f"Missing ECG leads: {', '.join(missing)}"
+            f"Missing required ECG lead column(s): {', '.join(missing)}. "
+            f"Expected all 12 leads: {', '.join(LEADS)}."
         )
 
+    # 2. Check for duplicate lead columns
+    # Note: pandas read_csv mangles duplicate columns to 'Lead.1', 'Lead.2', etc.
+    duplicates = [
+        lead for lead in LEADS
+        if list(df.columns).count(lead) > 1
+        or any(
+            col == f"{lead}.1"
+            or (col.startswith(f"{lead}.") and col[len(lead) + 1:].isdigit())
+            for col in df.columns
+        )
+    ]
+    if duplicates:
+        raise ValueError(
+            f"Duplicate ECG lead column(s) detected: {', '.join(duplicates)}."
+        )
+
+    # 3. Validate lead ordering
+    lead_cols_in_csv = [col for col in df.columns if col in set(LEADS)]
+    if lead_cols_in_csv != LEADS:
+        raise ValueError(
+            f"ECG lead columns appear in the incorrect order.\n"
+            f"Expected standard order: {', '.join(LEADS)}\n"
+            f"Found in CSV: {', '.join(lead_cols_in_csv)}"
+        )
+
+    # 4. Check sample count (length)
     if len(df) != 1000:
         raise ValueError(
-            f"Expected 1000 samples, but received {len(df)}."
+            f"Expected exactly 1,000 samples (10 seconds sampled at 100 Hz), "
+            f"but received {len(df)} samples."
         )
 
-    signal_array = df[LEADS].apply(
+    # 5. Validate numeric values, NaN, and Inf
+    signal_df = df[LEADS].apply(
         pd.to_numeric,
         errors="coerce"
-    ).to_numpy(dtype=np.float32)
+    )
 
-    if not np.isfinite(signal_array).all():
+    nan_mask = signal_df.isna()
+    if nan_mask.any().any():
+        nan_cols = [col for col in LEADS if nan_mask[col].any()]
+        nan_count = int(nan_mask.sum().sum())
         raise ValueError(
-            "The ECG contains missing or invalid signal values."
+            f"The ECG contains {nan_count} missing (NaN) or non-numeric value(s) "
+            f"in lead(s): {', '.join(nan_cols)}."
         )
 
-    # CSV must already be filtered and normalized.
+    signal_array = signal_df.to_numpy(dtype=np.float32)
+
+    inf_mask = np.isinf(signal_array)
+    if inf_mask.any():
+        inf_count = int(inf_mask.sum())
+        raise ValueError(
+            f"The ECG contains {inf_count} infinite (Inf) value(s)."
+        )
+
+    # 6. Signal scaling validation
+    # CardioFed models expect per-lead zero-mean, unit-variance standardized signals (z-scores).
+    lead_stds = signal_array.std(axis=0)
+    lead_means = signal_array.mean(axis=0)
+    mean_std = float(lead_stds.mean())
+    max_abs = float(np.abs(signal_array).max())
+
+    # 6a. Flatline / zero-variance check
+    if mean_std < 1e-4:
+        raise ValueError(
+            "The uploaded ECG signal has zero or near-zero variance across all leads (flatline). "
+            "Valid ECG signals must contain active physiological waveforms."
+        )
+
+    # 6b. Raw millivolts check (un-normalized raw physical voltage)
+    # Physical 12-lead ECG signals in millivolts typically have lead standard deviations between 0.05 and 0.25 mV.
+    # Properly z-scored signals have per-lead standard deviations near 1.0 (mean_std ≈ 1.0).
+    if mean_std < 0.25:
+        raise ValueError(
+            f"The uploaded ECG has a mean lead standard deviation of {mean_std:.3f}, "
+            f"which is characteristic of un-normalized raw physical voltage (e.g., millivolts). "
+            f"CardioFed models require per-lead Z-score normalized signals (expected lead std ≈ 1.0). "
+            f"Please preprocess your signal with CardioFed's 0.5–40 Hz bandpass filter and z-score standardization."
+        )
+
+    # 6c. Raw microvolts or uncalibrated ADC counts check (excessive amplitude)
+    # Standardized signals in PTB-XL have peak amplitudes typically between 3 and 22 standard deviations.
+    # Raw microvolts or integer ADC values produce standard deviations > 20 and amplitudes > 100.
+    if mean_std > 20.0 or max_abs > 100.0:
+        raise ValueError(
+            f"The uploaded ECG contains excessively large values (mean lead std = {mean_std:.1f}, "
+            f"max absolute amplitude = {max_abs:.1f}). This indicates raw microvolts (µV), uncalibrated ADC "
+            f"counts, or severe noise. CardioFed models require per-lead Z-score normalized signals "
+            f"(expected lead std ≈ 1.0, typical peaks within ±25)."
+        )
+
+    # 6d. Severe DC offset check (uncentered baseline)
+    max_lead_mean_abs = float(np.abs(lead_means).max())
+    if max_lead_mean_abs > 10.0:
+        bad_lead_idx = int(np.argmax(np.abs(lead_means)))
+        raise ValueError(
+            f"Lead '{LEADS[bad_lead_idx]}' has a significant DC baseline offset (mean = {lead_means[bad_lead_idx]:.2f}). "
+            f"CardioFed models require zero-mean standardized signals (expected lead mean ≈ 0.0)."
+        )
+
+    # Convert to PyTorch tensor of shape [1, 12, 1000]
     signal = torch.from_numpy(
         signal_array.T.copy()
     ).unsqueeze(0)
@@ -603,10 +709,30 @@ uploaded_file = None
 if input_mode == "CSV File":
 
     st.info(
-        "Upload a CSV containing 1,000 samples and all 12 leads. "
-        "The signals must already be filtered and normalized "
-        "using the CardioFed preprocessing pipeline."
+        "**CSV Upload Requirements (Preprocessed, Model-Ready Signals)**\n\n"
+        "CardioFed deep-learning models evaluate preprocessed 12-lead ECG signals directly. "
+        "Uploaded CSVs must adhere to the following specification:\n\n"
+        "- **Signal Dimensions**: Exactly 1,000 samples (10 seconds sampled at 100 Hz).\n"
+        "- **Required Leads**: All 12 standard leads in standard order: "
+        "`Lead_I`, `Lead_II`, `Lead_III`, `aVR`, `aVL`, `aVF`, `V1`, `V2`, `V3`, `V4`, `V5`, `V6`.\n"
+        "- **Preprocessing Status**: Signals **must already be filtered** (0.5–40 Hz bandpass) and "
+        "**per-lead Z-score normalized** (zero mean, unit variance per lead).\n"
+        "- **Note on Raw Signals**: The application does **not** automatically filter, resample, or normalize raw ECG signals "
+        "because input sampling frequencies and physical voltage units (e.g., mV, µV, ADC counts) cannot be reliably inferred. "
+        "Un-normalized signals (such as raw millivolts) will be rejected by input validation."
     )
+
+    with st.expander("ℹ️ Preprocessing & CSV Formatting Guidelines"):
+        st.markdown(
+            """
+            **How to prepare your CSV file for CardioFed:**
+            1. **Sampling Rate**: Resample your 10-second recording to 100 Hz (1,000 rows).
+            2. **Filtering**: Apply a 0.5–40 Hz Butterworth bandpass filter (zero-phase).
+            3. **Normalization**: Standardize each lead independently: `(signal - mean) / (std + 1e-8)`.
+            4. **Columns**: Name the 12 columns `Lead_I`, `Lead_II`, `Lead_III`, `aVR`, `aVL`, `aVF`, `V1`, `V2`, `V3`, `V4`, `V5`, `V6`.
+            *(Optional metadata columns such as `ecg_id` or `time_seconds` are permitted as long as the 12 leads appear in standard order).*
+            """
+        )
 
     uploaded_file = st.file_uploader(
         "Upload ECG CSV",
