@@ -226,7 +226,7 @@ def test_ig_device_compatibility():
 
 
 def test_ig_real_model_architectures_and_eval_guard():
-    """Verify integrated_gradients runs on actual CardioFed network architectures and enforces eval mode."""
+    """Verify integrated_gradients runs on actual CardioFed network architectures and restores training mode."""
     from src.model import MultiScaleResidualECGNet, ECGNet
 
     torch.manual_seed(42)
@@ -238,18 +238,56 @@ def test_ig_real_model_architectures_and_eval_guard():
     x = torch.randn(12, 1000, dtype=torch.float32)
 
     for model in models:
-        # Deliberately place model in training mode to verify integrated_gradients enforces model.eval()
+        # Deliberately place model in training mode to verify integrated_gradients restores it
         model.train()
         assert model.training is True
 
         attr, err, fx, fb = integrated_gradients(model, x, target=1, steps=32, batch=16)
 
-        assert model.training is False, "integrated_gradients must set model.eval()"
+        assert model.training is True, "integrated_gradients must restore caller's training mode"
         assert attr.shape == (12, 1000)
         assert torch.isfinite(attr).all()
+        # Verify fx matches deterministic eval mode output (dropout disabled)
+        model.eval()
         assert fx == pytest.approx(float(model(x[None])[0, 1].detach()), abs=1e-4)
         # Completeness error on non-linear deep models should be reasonable (< 5%)
         assert err < 0.05
+
+
+def test_ig_model_mode_eval_preservation():
+    """Verify that a model initially in evaluation mode remains in evaluation mode."""
+    weights = np.ones((5, 12, 1000), dtype=np.float32)
+    model = LinearToyModel(weights)
+    model.eval()
+    assert model.training is False
+
+    x = torch.randn(12, 1000, dtype=torch.float32)
+    attr, err, fx, fb = integrated_gradients(model, x, target=0, steps=16)
+
+    assert model.training is False, "model initially in evaluation mode must remain in evaluation mode"
+
+
+def test_ig_model_mode_restoration_on_exception():
+    """Verify that model's original training state is restored even if an exception occurs."""
+    weights = np.ones((5, 12, 1000), dtype=np.float32)
+    model = LinearToyModel(weights)
+
+    # 1. Model initially in training mode raises exception (out-of-bounds target)
+    model.train()
+    assert model.training is True
+    x = torch.randn(12, 1000, dtype=torch.float32)
+
+    with pytest.raises(IndexError):
+        integrated_gradients(model, x, target=99, steps=16)
+    assert model.training is True, "model initially in training mode must remain in training mode after exception"
+
+    # 2. Model initially in eval mode raises exception (invalid baseline shape)
+    model.eval()
+    assert model.training is False
+
+    with pytest.raises(ValueError):
+        integrated_gradients(model, x, target=0, steps=16, baseline=torch.zeros((10, 1000)))
+    assert model.training is False, "model initially in eval mode must remain in eval mode after exception"
 
 
 def test_ig_batch_size_invariance():
@@ -268,7 +306,7 @@ def test_ig_batch_size_invariance():
 
 
 def test_ig_custom_baseline_support():
-    """Verify that passing an explicit baseline computes attributions relative to that baseline."""
+    """Verify that passing a valid non-zero baseline computes attributions relative to that baseline."""
     weights = np.ones((5, 12, 1000), dtype=np.float32)
     model = LinearToyModel(weights)
 
@@ -288,6 +326,41 @@ def test_ig_custom_baseline_support():
     assert fx == pytest.approx(24000.0, abs=1.0)
     assert fb == pytest.approx(6000.0, abs=1.0)
     assert err < 1e-4
+
+
+def test_ig_custom_baseline_validation_rejections():
+    """Verify that invalid custom baselines (shape mismatch, NaN, Inf) are rejected with clear ValueErrors."""
+    weights = np.ones((5, 12, 1000), dtype=np.float32)
+    model = LinearToyModel(weights)
+    x = torch.randn(12, 1000, dtype=torch.float32)
+
+    # 1. Incompatible shapes
+    bad_shapes = [
+        torch.zeros((1000,), dtype=torch.float32),
+        torch.zeros((1, 12, 1000), dtype=torch.float32),
+        torch.zeros((12, 500), dtype=torch.float32),
+        torch.zeros((10, 1000), dtype=torch.float32),
+    ]
+    for bad_b in bad_shapes:
+        with pytest.raises(ValueError, match="baseline shape .* must match input shape"):
+            integrated_gradients(model, x, target=0, steps=16, baseline=bad_b)
+
+    # 2. NaN values
+    nan_baseline = torch.zeros((12, 1000), dtype=torch.float32)
+    nan_baseline[0, 50] = float("nan")
+    with pytest.raises(ValueError, match="baseline tensor must contain only finite values"):
+        integrated_gradients(model, x, target=0, steps=16, baseline=nan_baseline)
+
+    # 3. Inf values
+    inf_baseline = torch.zeros((12, 1000), dtype=torch.float32)
+    inf_baseline[2, 100] = float("inf")
+    with pytest.raises(ValueError, match="baseline tensor must contain only finite values"):
+        integrated_gradients(model, x, target=0, steps=16, baseline=inf_baseline)
+
+    neg_inf_baseline = torch.zeros((12, 1000), dtype=torch.float32)
+    neg_inf_baseline[3, 200] = float("-inf")
+    with pytest.raises(ValueError, match="baseline tensor must contain only finite values"):
+        integrated_gradients(model, x, target=0, steps=16, baseline=neg_inf_baseline)
 
 
 def test_app_integrated_gradients_wrapper():
