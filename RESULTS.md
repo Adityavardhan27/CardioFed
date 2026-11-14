@@ -138,34 +138,102 @@ claimed. Source: `results/revised/per_site/`.
 
 ## 6. Robustness (inference only)
 
-Corruptions are applied to the processed test signals, which are then passed
-through the pipeline's own preprocessing again. Thresholds are not re-tuned.
-Each entry is a single seeded realisation; no CIs.
+Corruptions are applied to processed test signals, which are then passed through
+the pipeline's standard preprocessing (`preprocess_signal`: 0.5–40 Hz band-pass
+filter and per-lead z-score normalisation). Thresholds are strictly frozen from
+validation tuning and never re-calibrated on corrupted test data.
+
+Authoritative extended results are reported in `results/revised/robustness_extended/`
+(`robustness_metrics.csv`, `robustness_paired_ci.csv`, `robustness_summary.json`,
+`robustness_macro_auroc.png`, `robustness_macro_f1.png`). The original single-seed
+45-row outputs in `results/revised/robustness/` are preserved byte-for-byte as
+historical artifacts.
+
+### 6.1 Evaluation methodology
+
+- **Seed variability vs patient uncertainty:** For stochastic perturbations
+  (Gaussian noise, baseline wander, random lead drop), 5 independent corruption
+  realisation seeds (0–4) are evaluated across all models. Seed variability is
+  reported as the standard deviation across seeds ($\sigma_{\text{seed}}$).
+  Patient-sampling uncertainty is evaluated via paired patient-clustered bootstrap
+  resampling ($B = 2,000$ replicates clustered across 1,876 unique patients /
+  2,157 ECG recordings in fold 10). Within each bootstrap replicate, paired
+  differences ($\Delta = \text{corrupted} - \text{clean}$) are calculated on the
+  identical patient sample and averaged across realization seeds, keeping seed
+  variance and patient sampling error strictly separated.
+- **Extended conditions:** In addition to the original 10 conditions, the
+  extended protocol includes: Lead II only, all 12 leads zero (flatline), signal
+  amplitude clipping ($\pm 1.5, \pm 2.0, \pm 2.5$ standard deviations), and controlled
+  circular temporal translations ($\pm 50, \pm 100$ samples, i.e., $\pm 0.5\text{s}, \pm 1.0\text{s}$).
+
+### 6.2 Macro-AUROC under corruptions
+
+Values are mean across 5 seeds for stochastic conditions (mean $\pm \sigma_{\text{seed}}$)
+or point estimates for deterministic conditions (seed 0).
 
 | Perturbation | baseline | multiscale | federated_r8 |
 |---|---|---|---|
-| clean | 0.908 | 0.906 | 0.906 |
-| Gaussian noise σ = 0.2 (× lead std) | 0.907 | 0.904 | 0.905 |
-| Gaussian noise σ = 0.5 | 0.901 | 0.894 | 0.897 |
-| Baseline wander, amplitude 2.0 | 0.900 | 0.896 | 0.901 |
-| 1 random lead removed | 0.896 | 0.894 | 0.895 |
-| 3 random leads removed | 0.867 | 0.870 | 0.870 |
-| 6 random leads removed | 0.806 | 0.817 | 0.820 |
+| Clean | 0.908 | 0.906 | 0.906 |
+| Gaussian noise $\sigma = 0.05$ | 0.908 ± 0.000 | 0.906 ± 0.000 | 0.906 ± 0.000 |
+| Gaussian noise $\sigma = 0.1$ | 0.908 ± 0.000 | 0.906 ± 0.000 | 0.906 ± 0.000 |
+| Gaussian noise $\sigma = 0.2$ | 0.907 ± 0.000 | 0.905 ± 0.000 | 0.905 ± 0.000 |
+| Gaussian noise $\sigma = 0.5$ | 0.902 ± 0.000 | 0.894 ± 0.001 | 0.897 ± 0.001 |
+| Baseline wander amp = 0.5 | 0.908 ± 0.000 | 0.906 ± 0.000 | 0.906 ± 0.000 |
+| Baseline wander amp = 1.0 | 0.906 ± 0.001 | 0.904 ± 0.000 | 0.905 ± 0.000 |
+| Baseline wander amp = 2.0 | 0.900 ± 0.002 | 0.895 ± 0.001 | 0.901 ± 0.001 |
+| 1 random lead removed | 0.898 ± 0.001 | 0.896 ± 0.002 | 0.896 ± 0.001 |
+| 3 random leads removed | 0.870 ± 0.003 | 0.870 ± 0.003 | 0.873 ± 0.003 |
+| 6 random leads removed | 0.801 ± 0.005 | 0.814 ± 0.004 | 0.818 ± 0.002 |
 | Limb leads only (V1–V6 removed) | 0.818 | 0.805 | 0.836 |
 | Precordial leads only | 0.836 | 0.819 | 0.847 |
 | Lead I only | 0.658 | 0.664 | 0.606 |
+| Lead II only | 0.592 | 0.637 | 0.684 |
+| All leads zero (flatline) | 0.500 | 0.500 | 0.500 |
+| Clipping at $\pm 2.5\,\text{std}$ | 0.901 | 0.897 | 0.900 |
+| Clipping at $\pm 2.0\,\text{std}$ | 0.895 | 0.890 | 0.895 |
+| Clipping at $\pm 1.5\,\text{std}$ | 0.885 | 0.877 | 0.887 |
+| Circular translation $-100$ samples ($-1.0\text{s}$) | 0.908 | 0.906 | 0.906 |
+| Circular translation $-50$ samples ($-0.5\text{s}$) | 0.908 | 0.905 | 0.905 |
+| Circular translation $+50$ samples ($+0.5\text{s}$) | 0.908 | 0.906 | 0.906 |
+| Circular translation $+100$ samples ($+1.0\text{s}$) | 0.908 | 0.906 | 0.905 |
 
-Values are macro-AUROC.
-- All models tolerate moderate noise and baseline wander; low-frequency
-  wander is largely removed by the 0.5 Hz high-pass filter.
-- Missing leads cause large drops, and macro-F1 falls further because the
-  thresholds are calibrated for complete ECGs (e.g. limb-only macro-F1
-  0.36–0.38).
-- All models classify a flat-line (all-zero) ECG as abnormal: STTC
-  probability 0.71–0.97, HYP 0.76–0.97. The demo app now warns when a lead
-  is flat or missing.
+### 6.3 Macro-F1 under corruptions (frozen validation thresholds)
 
-Source: `results/revised/robustness/`.
+| Perturbation | baseline | multiscale | federated_r8 |
+|---|---|---|---|
+| Clean | 0.710 | 0.705 | 0.706 |
+| Gaussian noise $\sigma = 0.2$ | 0.708 ± 0.001 | 0.704 ± 0.001 | 0.694 ± 0.002 |
+| Gaussian noise $\sigma = 0.5$ | 0.628 ± 0.002 | 0.643 ± 0.002 | 0.605 ± 0.003 |
+| Baseline wander amp = 2.0 | 0.689 ± 0.003 | 0.679 ± 0.006 | 0.692 ± 0.005 |
+| 6 random leads removed | 0.454 ± 0.007 | 0.475 ± 0.004 | 0.505 ± 0.004 |
+| Limb leads only | 0.363 | 0.377 | 0.377 |
+| Precordial leads only | 0.507 | 0.425 | 0.541 |
+| Lead I only | 0.275 | 0.267 | 0.170 |
+| Lead II only | 0.276 | 0.308 | 0.190 |
+| All leads zero (flatline) | 0.275 | 0.119 | 0.119 |
+| Clipping at $\pm 1.5\,\text{std}$ | 0.517 | 0.595 | 0.609 |
+| Circular translations ($-100$ to $+100$) | 0.709–0.711 | 0.706–0.709 | 0.704–0.709 |
+
+### 6.4 Key findings and statistical conclusions
+
+1. **Noise and Baseline Wander:**
+   - Realisation seed variability is minimal ($\sigma_{\text{seed}} \le 0.0007$ for noise, $\le 0.002$ for wander), indicating that single-realisation estimates were not anomalous.
+   - For mild baseline wander (amplitude 0.5), 95% paired bootstrap CIs for $\Delta_{\text{AUROC}}$ span zero across all models (e.g. multiscale: $-0.0003$ [$-0.0007, +0.0001$], $p = 0.144$), confirming that the 0.5 Hz high-pass Butterworth filter effectively removes low-frequency wander.
+   - At high amplitude wander (2.0) and severe noise ($\sigma = 0.5$), AUROC decreases by $-0.006$ to $-0.012$ (95% CIs exclude zero). Macro-F1 degrades substantially (dropping to $0.605 - 0.643$) because fixed validation thresholds become miscalibrated under elevated variance.
+2. **Missing Lead Subsets:**
+   - Reducing to limb leads only drops AUROC to $0.805 - 0.836$ ($\Delta_{\text{AUROC}} \in [-0.102, -0.070]$, 95% CIs strictly exclude zero) and collapses macro-F1 to $0.363 - 0.377$. Precordial leads preserve slightly more diagnostic information (AUROC $0.819 - 0.847$, F1 $0.425 - 0.541$).
+   - Single-lead evaluation demonstrates severe degradation: Lead I yields macro-AUROC $0.606 - 0.664$; Lead II yields $0.592 - 0.684$. In both single-lead scenarios, macro-F1 collapses to $0.170 - 0.308$.
+3. **Flatline (All-12-Leads-Zero):**
+   - Setting all 12 leads to zero yields macro-AUROC of exactly $0.5000$ across all models ($\Delta_{\text{AUROC}} \approx -0.407$, 95% CIs $[-0.416, -0.397]$).
+   - Because the zero baseline maps to positive output logits for STTC and HYP, the models predict STTC and HYP for 100% of flatline records, collapsing macro-F1 to $0.119 - 0.275$. The app flatline warning remains clinically essential.
+4. **Non-linear Amplitude Clipping:**
+   - Mild clipping at $\pm 2.5\,\text{std}$ produces modest AUROC drops ($-0.006$ to $-0.009$, 95% CIs strictly negative).
+   - Severe clipping at $\pm 1.5\,\text{std}$ significantly distorts waveform morphology, degrading AUROC by $-0.019$ to $-0.029$ and collapsing macro-F1 to $0.517 - 0.609$.
+5. **Circular Temporal Shifts:**
+   - Controlled circular translations of $\pm 50$ and $\pm 100$ samples ($\pm 0.5\text{s}$ and $\pm 1.0\text{s}$) produce negligible change in performance ($|\Delta_{\text{AUROC}}| \le 0.00067$).
+   - All 95% paired bootstrap CIs for temporal shift span zero ($p \in [0.32, 0.97]$), demonstrating empirical shift-invariance due to 1D global average pooling before the classification head. Note: circular translations wrap signal boundaries; they do not simulate realistic acquisition-window entry/exit truncations.
+
+Source: `results/revised/robustness_extended/`. Historical baseline: `results/revised/robustness/`.
 
 ## 7. Explainability (Integrated Gradients)
 
