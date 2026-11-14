@@ -1,0 +1,385 @@
+{
+  "class_summary": {
+    "NORM": {
+      "TP": 817,
+      "FP": 217,
+      "FN": 99,
+      "TN": 1024,
+      "support": 916,
+      "prevalence": 0.4246638850254984,
+      "precision": 0.7901353965183753,
+      "recall": 0.8919213973799127,
+      "f1": 0.8379487179487181,
+      "threshold": 0.5239060521125793
+    },
+    "MI": {
+      "TP": 431,
+      "FP": 191,
+      "FN": 119,
+      "TN": 1416,
+      "support": 550,
+      "prevalence": 0.25498377375985165,
+      "precision": 0.6929260450160771,
+      "recall": 0.7836363636363637,
+      "f1": 0.735494880546075,
+      "threshold": 0.5296005010604858
+    },
+    "STTC": {
+      "TP": 397,
+      "FP": 168,
+      "FN": 109,
+      "TN": 1483,
+      "support": 506,
+      "prevalence": 0.23458507185906352,
+      "precision": 0.7026548672566372,
+      "recall": 0.7845849802371542,
+      "f1": 0.7413632119514473,
+      "threshold": 0.6721716523170471
+    },
+    "CD": {
+      "TP": 372,
+      "FP": 123,
+      "FN": 124,
+      "TN": 1538,
+      "support": 496,
+      "prevalence": 0.22994900324524803,
+      "precision": 0.7515151515151515,
+      "recall": 0.75,
+      "f1": 0.7507568113017155,
+      "threshold": 0.5752673149108887
+    },
+    "HYP": {
+      "TP": 136,
+      "FP": 197,
+      "FN": 126,
+      "TN": 1698,
+      "support": 262,
+      "prevalence": 0.1214649976819657,
+      "precision": 0.4084084084084084,
+      "recall": 0.5190839694656488,
+      "f1": 0.45714285714285713,
+      "threshold": 0.7272968292236328
+    }
+  },
+  "mi_subcodes": {
+    "ASMI": {
+      "total": 234,
+      "fn": 15,
+      "tp": 219,
+      "fn_rate": 0.0641025641025641
+    },
+    "IMI": {
+      "total": 267,
+      "fn": 65,
+      "tp": 202,
+      "fn_rate": 0.24344569288389514
+    },
+    "ILMI": {
+      "total": 48,
+      "fn": 4,
+      "tp": 44,
+      "fn_rate": 0.08333333333333333
+    },
+    "INJAS": {
+      "total": 22,
+      "fn": 2,
+      "tp": 20,
+      "fn_rate": 0.09090909090909091
+    },
+    "INJIL": {
+      "total": 2,
+      "fn": 0,
+      "tp": 2,
+      "fn_rate": 0.0
+    },
+    "AMI": {
+      "total": 35,
+      "fn": 14,
+      "tp": 21,
+      "fn_rate": 0.4
+    },
+    "LMI": {
+      "total": 20,
+      "fn": 11,
+      "tp": 9,
+      "fn_rate": 0.55
+    },
+    "INJAL": {
+      "total": 14,
+      "fn": 0,
+      "tp": 14,
+      "fn_rate": 0.0
+    },
+    "ALMI": {
+      "total": 27,
+      "fn": 8,
+      "tp": 19,
+      "fn_rate": 0.2962962962962963
+    },
+    "IPLMI": {
+      "total": 5,
+      "fn": 1,
+      "tp": 4,
+      "fn_rate": 0.2
+    },
+    "INJIN": {
+      "total": 2,
+      "fn": 0,
+      "tp": 2,
+      "fn_rate": 0.0
+    },
+    "INJLA": {
+      "total": 2,
+      "fn": 0,
+      "tp": 2,
+      "fn_rate": 0.0
+    },
+    "IPMI": {
+      "total": 3,
+      "fn": 1,
+      "tp": 2,
+      "fn_rate": 0.3333333333333333
+    },
+    "PMI": {
+      "total": 2,
+      "fn": 1,
+      "tp": 1,
+      "fn_rate": 0.5
+    }
+  },
+  "mi_demographics": {
+    "TP_age": {
+      "median": 73.0,
+      "valid_mean": 70.7673860911271,
+      "valid_std": 12.196353928968751,
+      "valid_median": 72.0,
+      "valid_count": 417,
+      "sentinel_count": 14,
+      "sentinel_pct": 0.03248259860788863,
+      "raw_mean": 78.21345707656613,
+      "raw_std": 42.41682317493126
+    },
+    "FN_age": {
+      "median": 67.0,
+      "valid_mean": 66.15254237288136,
+      "valid_std": 13.07416524677192,
+      "valid_median": 67.0,
+      "valid_count": 118,
+      "sentinel_count": 1,
+      "sentinel_pct": 0.008403361344537815,
+      "raw_mean": 68.11764705882354,
+      "raw_std": 25.080269938329245
+    },
+    "TP_sex": {
+      "female_count": 189,
+      "female_pct": 0.4385150812064965,
+      "male_count": 242,
+      "male_pct": 0.5614849187935035,
+      "total": 431
+    },
+    "FN_sex": {
+      "female_count": 64,
+      "female_pct": 0.5378151260504201,
+      "male_count": 55,
+      "male_pct": 0.46218487394957986,
+      "total": 119
+    }
+  },
+  "mi_fn_predictions": {
+    "raw": {
+      "NORM": 54,
+      "STTC, HYP": 16,
+      "STTC": 16,
+      "CD": 12,
+      "NORM, CD": 5,
+      "None": 5,
+      "STTC, CD": 5,
+      "STTC, CD, HYP": 3,
+      "HYP": 2,
+      "CD, HYP": 1
+    },
+    "final": {
+      "NORM": 54,
+      "CD": 17,
+      "STTC, HYP": 16,
+      "STTC": 16,
+      "None": 5,
+      "STTC, CD": 5,
+      "STTC, CD, HYP": 3,
+      "HYP": 2,
+      "CD, HYP": 1
+    }
+  },
+  "mi_co_occurring": {
+    "FN_sole_MI_count": 68,
+    "FN_sole_MI_pct": 0.5714285714285714,
+    "TP_sole_MI_count": 191,
+    "TP_sole_MI_pct": 0.4431554524361949,
+    "FN_with_CD_count": 28,
+    "FN_with_CD_pct": 0.23529411764705882,
+    "TP_with_CD_count": 147,
+    "TP_with_CD_pct": 0.34106728538283065,
+    "FN_with_STTC_count": 20,
+    "FN_with_STTC_pct": 0.16806722689075632,
+    "TP_with_STTC_count": 113,
+    "TP_with_STTC_pct": 0.26218097447795824
+  },
+  "hyp_subcodes": {
+    "LVH": {
+      "total": 214,
+      "fn": 91,
+      "tp": 123,
+      "fn_rate": 0.4252336448598131
+    },
+    "LAO/LAE": {
+      "total": 42,
+      "fn": 27,
+      "tp": 15,
+      "fn_rate": 0.6428571428571429
+    },
+    "RAO/RAE": {
+      "total": 10,
+      "fn": 9,
+      "tp": 1,
+      "fn_rate": 0.9
+    },
+    "RVH": {
+      "total": 12,
+      "fn": 4,
+      "tp": 8,
+      "fn_rate": 0.3333333333333333
+    },
+    "SEHYP": {
+      "total": 2,
+      "fn": 1,
+      "tp": 1,
+      "fn_rate": 0.5
+    }
+  },
+  "hyp_fp_sources": {
+    "exact_label_sets": {
+      "STTC": 49,
+      "CD": 38,
+      "CD, MI": 28,
+      "MI": 25,
+      "NORM": 22,
+      "MI, STTC": 16,
+      "CD, STTC": 12,
+      "CD, MI, STTC": 7
+    },
+    "superclass_incidence": {
+      "STTC_present": 84,
+      "STTC_pct": 0.4263959390862944,
+      "CD_present": 85,
+      "CD_pct": 0.43147208121827413,
+      "MI_present": 76,
+      "MI_pct": 0.38578680203045684,
+      "NORM_present": 22,
+      "NORM_pct": 0.1116751269035533,
+      "abnormal_present": 175,
+      "abnormal_pct": 0.8883248730964467
+    }
+  },
+  "hyp_demographics": {
+    "TP_age": {
+      "median": 74.0,
+      "valid_mean": 72.33333333333333,
+      "valid_std": 10.383976695379191,
+      "valid_median": 73.0,
+      "valid_count": 132,
+      "sentinel_count": 4,
+      "sentinel_pct": 0.029411764705882353,
+      "raw_mean": 79.02941176470588,
+      "raw_std": 39.94031494830674
+    },
+    "FN_age": {
+      "median": 66.0,
+      "valid_mean": 63.608,
+      "valid_std": 15.33386301095421,
+      "valid_median": 66.0,
+      "valid_count": 125,
+      "sentinel_count": 1,
+      "sentinel_pct": 0.007936507936507936,
+      "raw_mean": 65.48412698412699,
+      "raw_std": 26.014375757102957
+    },
+    "FP_age": {
+      "median": 71.0,
+      "valid_mean": 68.75661375661376,
+      "valid_std": 14.32911116469669,
+      "valid_median": 71.0,
+      "valid_count": 189,
+      "sentinel_count": 8,
+      "sentinel_pct": 0.04060913705583756,
+      "raw_mean": 78.1472081218274,
+      "raw_std": 47.863364785545734
+    },
+    "TP_sex": {
+      "female_count": 72,
+      "female_pct": 0.5294117647058824,
+      "male_count": 64,
+      "male_pct": 0.47058823529411764,
+      "total": 136
+    },
+    "FN_sex": {
+      "female_count": 55,
+      "female_pct": 0.4365079365079365,
+      "male_count": 71,
+      "male_pct": 0.5634920634920635,
+      "total": 126
+    },
+    "FP_sex": {
+      "female_count": 93,
+      "female_pct": 0.4720812182741117,
+      "male_count": 104,
+      "male_pct": 0.5279187817258884,
+      "total": 197
+    }
+  },
+  "site_groups": {
+    "site 0": {
+      "records": 483,
+      "NORM_count": 310,
+      "NORM_prevalence": 0.6418219461697723,
+      "MI_total": 78,
+      "MI_FN": 30,
+      "MI_FN_rate": 0.38461538461538464,
+      "HYP_total": 34,
+      "HYP_FN": 19,
+      "HYP_FN_rate": 0.5588235294117647
+    },
+    "site 1": {
+      "records": 597,
+      "NORM_count": 265,
+      "NORM_prevalence": 0.4438860971524288,
+      "MI_total": 124,
+      "MI_FN": 21,
+      "MI_FN_rate": 0.1693548387096774,
+      "HYP_total": 95,
+      "HYP_FN": 51,
+      "HYP_FN_rate": 0.5368421052631579
+    },
+    "site 2": {
+      "records": 867,
+      "NORM_count": 283,
+      "NORM_prevalence": 0.3264129181084198,
+      "MI_total": 283,
+      "MI_FN": 57,
+      "MI_FN_rate": 0.20141342756183744,
+      "HYP_total": 83,
+      "HYP_FN": 46,
+      "HYP_FN_rate": 0.5542168674698795
+    },
+    "other sites": {
+      "records": 210,
+      "NORM_count": 58,
+      "NORM_prevalence": 0.2761904761904762,
+      "MI_total": 65,
+      "MI_FN": 11,
+      "MI_FN_rate": 0.16923076923076924,
+      "HYP_total": 50,
+      "HYP_FN": 10,
+      "HYP_FN_rate": 0.2
+    }
+  }
+}
