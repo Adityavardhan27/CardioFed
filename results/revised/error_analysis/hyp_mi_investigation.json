@@ -1,0 +1,512 @@
+{
+  "class_summary": {
+    "NORM": {
+      "TP": 817,
+      "FP": 217,
+      "FN": 99,
+      "TN": 1024,
+      "support": 916,
+      "precision": 0.7901353965183753,
+      "recall": 0.8919213973799127,
+      "f1": 0.8379487179487181,
+      "threshold": 0.5239060521125793
+    },
+    "MI": {
+      "TP": 431,
+      "FP": 191,
+      "FN": 119,
+      "TN": 1416,
+      "support": 550,
+      "precision": 0.6929260450160771,
+      "recall": 0.7836363636363637,
+      "f1": 0.735494880546075,
+      "threshold": 0.5296005010604858
+    },
+    "STTC": {
+      "TP": 397,
+      "FP": 168,
+      "FN": 109,
+      "TN": 1483,
+      "support": 506,
+      "precision": 0.7026548672566372,
+      "recall": 0.7845849802371542,
+      "f1": 0.7413632119514473,
+      "threshold": 0.6721716523170471
+    },
+    "CD": {
+      "TP": 372,
+      "FP": 123,
+      "FN": 124,
+      "TN": 1538,
+      "support": 496,
+      "precision": 0.7515151515151515,
+      "recall": 0.75,
+      "f1": 0.7507568113017155,
+      "threshold": 0.5752673149108887
+    },
+    "HYP": {
+      "TP": 136,
+      "FP": 197,
+      "FN": 126,
+      "TN": 1698,
+      "support": 262,
+      "precision": 0.4084084084084084,
+      "recall": 0.5190839694656488,
+      "f1": 0.45714285714285713,
+      "threshold": 0.7272968292236328
+    }
+  },
+  "mi_subcodes": {
+    "ASMI": {
+      "total": 234,
+      "fn": 15,
+      "tp": 219,
+      "fn_rate": 0.0641025641025641
+    },
+    "IMI": {
+      "total": 267,
+      "fn": 65,
+      "tp": 202,
+      "fn_rate": 0.24344569288389514
+    },
+    "ILMI": {
+      "total": 48,
+      "fn": 4,
+      "tp": 44,
+      "fn_rate": 0.08333333333333333
+    },
+    "INJAS": {
+      "total": 22,
+      "fn": 2,
+      "tp": 20,
+      "fn_rate": 0.09090909090909091
+    },
+    "INJIL": {
+      "total": 2,
+      "fn": 0,
+      "tp": 2,
+      "fn_rate": 0.0
+    },
+    "AMI": {
+      "total": 35,
+      "fn": 14,
+      "tp": 21,
+      "fn_rate": 0.4
+    },
+    "LMI": {
+      "total": 20,
+      "fn": 11,
+      "tp": 9,
+      "fn_rate": 0.55
+    },
+    "INJAL": {
+      "total": 14,
+      "fn": 0,
+      "tp": 14,
+      "fn_rate": 0.0
+    },
+    "ALMI": {
+      "total": 27,
+      "fn": 8,
+      "tp": 19,
+      "fn_rate": 0.2962962962962963
+    },
+    "IPLMI": {
+      "total": 5,
+      "fn": 1,
+      "tp": 4,
+      "fn_rate": 0.2
+    },
+    "INJIN": {
+      "total": 2,
+      "fn": 0,
+      "tp": 2,
+      "fn_rate": 0.0
+    },
+    "INJLA": {
+      "total": 2,
+      "fn": 0,
+      "tp": 2,
+      "fn_rate": 0.0
+    },
+    "IPMI": {
+      "total": 3,
+      "fn": 1,
+      "tp": 2,
+      "fn_rate": 0.3333333333333333
+    },
+    "PMI": {
+      "total": 2,
+      "fn": 1,
+      "tp": 1,
+      "fn_rate": 0.5
+    }
+  },
+  "hyp_subcodes": {
+    "LVH": {
+      "total": 214,
+      "fn": 91,
+      "tp": 123,
+      "fn_rate": 0.4252336448598131
+    },
+    "LAO/LAE": {
+      "total": 42,
+      "fn": 27,
+      "tp": 15,
+      "fn_rate": 0.6428571428571429
+    },
+    "RAO/RAE": {
+      "total": 10,
+      "fn": 9,
+      "tp": 1,
+      "fn_rate": 0.9
+    },
+    "RVH": {
+      "total": 12,
+      "fn": 4,
+      "tp": 8,
+      "fn_rate": 0.3333333333333333
+    },
+    "SEHYP": {
+      "total": 2,
+      "fn": 1,
+      "tp": 1,
+      "fn_rate": 0.5
+    }
+  },
+  "site_analysis": {
+    "site_0": {
+      "records": 483,
+      "MI_total": 78,
+      "MI_FN": 30,
+      "MI_FN_rate": 0.38461538461538464,
+      "HYP_total": 34,
+      "HYP_FN": 19,
+      "HYP_FN_rate": 0.5588235294117647
+    },
+    "site_1": {
+      "records": 597,
+      "MI_total": 124,
+      "MI_FN": 21,
+      "MI_FN_rate": 0.1693548387096774,
+      "HYP_total": 95,
+      "HYP_FN": 51,
+      "HYP_FN_rate": 0.5368421052631579
+    },
+    "site_2": {
+      "records": 867,
+      "MI_total": 283,
+      "MI_FN": 57,
+      "MI_FN_rate": 0.20141342756183744,
+      "HYP_total": 83,
+      "HYP_FN": 46,
+      "HYP_FN_rate": 0.5542168674698795
+    },
+    "site_3": {
+      "records": 103,
+      "MI_total": 41,
+      "MI_FN": 9,
+      "MI_FN_rate": 0.21951219512195122,
+      "HYP_total": 30,
+      "HYP_FN": 6,
+      "HYP_FN_rate": 0.2
+    },
+    "site_4": {
+      "records": 16,
+      "MI_total": 1,
+      "MI_FN": 0,
+      "MI_FN_rate": 0.0,
+      "HYP_total": 5,
+      "HYP_FN": 1,
+      "HYP_FN_rate": 0.2
+    },
+    "site_5": {
+      "records": 5,
+      "MI_total": 1,
+      "MI_FN": 0,
+      "MI_FN_rate": 0.0,
+      "HYP_total": 1,
+      "HYP_FN": 1,
+      "HYP_FN_rate": 1.0
+    },
+    "site_6": {
+      "records": 4,
+      "MI_total": 0,
+      "MI_FN": 0,
+      "MI_FN_rate": 0.0,
+      "HYP_total": 0,
+      "HYP_FN": 0,
+      "HYP_FN_rate": 0.0
+    },
+    "site_7": {
+      "records": 7,
+      "MI_total": 2,
+      "MI_FN": 0,
+      "MI_FN_rate": 0.0,
+      "HYP_total": 2,
+      "HYP_FN": 0,
+      "HYP_FN_rate": 0.0
+    },
+    "site_8": {
+      "records": 6,
+      "MI_total": 1,
+      "MI_FN": 0,
+      "MI_FN_rate": 0.0,
+      "HYP_total": 1,
+      "HYP_FN": 0,
+      "HYP_FN_rate": 0.0
+    },
+    "site_9": {
+      "records": 4,
+      "MI_total": 2,
+      "MI_FN": 0,
+      "MI_FN_rate": 0.0,
+      "HYP_total": 1,
+      "HYP_FN": 0,
+      "HYP_FN_rate": 0.0
+    },
+    "site_10": {
+      "records": 4,
+      "MI_total": 1,
+      "MI_FN": 0,
+      "MI_FN_rate": 0.0,
+      "HYP_total": 1,
+      "HYP_FN": 0,
+      "HYP_FN_rate": 0.0
+    },
+    "site_11": {
+      "records": 3,
+      "MI_total": 0,
+      "MI_FN": 0,
+      "MI_FN_rate": 0.0,
+      "HYP_total": 1,
+      "HYP_FN": 1,
+      "HYP_FN_rate": 1.0
+    },
+    "site_12": {
+      "records": 5,
+      "MI_total": 1,
+      "MI_FN": 1,
+      "MI_FN_rate": 1.0,
+      "HYP_total": 3,
+      "HYP_FN": 1,
+      "HYP_FN_rate": 0.3333333333333333
+    },
+    "site_13": {
+      "records": 3,
+      "MI_total": 0,
+      "MI_FN": 0,
+      "MI_FN_rate": 0.0,
+      "HYP_total": 0,
+      "HYP_FN": 0,
+      "HYP_FN_rate": 0.0
+    },
+    "site_14": {
+      "records": 4,
+      "MI_total": 0,
+      "MI_FN": 0,
+      "MI_FN_rate": 0.0,
+      "HYP_total": 1,
+      "HYP_FN": 0,
+      "HYP_FN_rate": 0.0
+    },
+    "site_15": {
+      "records": 7,
+      "MI_total": 4,
+      "MI_FN": 0,
+      "MI_FN_rate": 0.0,
+      "HYP_total": 2,
+      "HYP_FN": 0,
+      "HYP_FN_rate": 0.0
+    },
+    "site_16": {
+      "records": 2,
+      "MI_total": 1,
+      "MI_FN": 0,
+      "MI_FN_rate": 0.0,
+      "HYP_total": 0,
+      "HYP_FN": 0,
+      "HYP_FN_rate": 0.0
+    },
+    "site_17": {
+      "records": 3,
+      "MI_total": 2,
+      "MI_FN": 0,
+      "MI_FN_rate": 0.0,
+      "HYP_total": 0,
+      "HYP_FN": 0,
+      "HYP_FN_rate": 0.0
+    },
+    "site_18": {
+      "records": 1,
+      "MI_total": 0,
+      "MI_FN": 0,
+      "MI_FN_rate": 0.0,
+      "HYP_total": 0,
+      "HYP_FN": 0,
+      "HYP_FN_rate": 0.0
+    },
+    "site_19": {
+      "records": 2,
+      "MI_total": 0,
+      "MI_FN": 0,
+      "MI_FN_rate": 0.0,
+      "HYP_total": 0,
+      "HYP_FN": 0,
+      "HYP_FN_rate": 0.0
+    },
+    "site_20": {
+      "records": 4,
+      "MI_total": 1,
+      "MI_FN": 1,
+      "MI_FN_rate": 1.0,
+      "HYP_total": 0,
+      "HYP_FN": 0,
+      "HYP_FN_rate": 0.0
+    },
+    "site_21": {
+      "records": 1,
+      "MI_total": 0,
+      "MI_FN": 0,
+      "MI_FN_rate": 0.0,
+      "HYP_total": 0,
+      "HYP_FN": 0,
+      "HYP_FN_rate": 0.0
+    },
+    "site_24": {
+      "records": 1,
+      "MI_total": 1,
+      "MI_FN": 0,
+      "MI_FN_rate": 0.0,
+      "HYP_total": 0,
+      "HYP_FN": 0,
+      "HYP_FN_rate": 0.0
+    },
+    "site_25": {
+      "records": 3,
+      "MI_total": 2,
+      "MI_FN": 0,
+      "MI_FN_rate": 0.0,
+      "HYP_total": 0,
+      "HYP_FN": 0,
+      "HYP_FN_rate": 0.0
+    },
+    "site_26": {
+      "records": 1,
+      "MI_total": 0,
+      "MI_FN": 0,
+      "MI_FN_rate": 0.0,
+      "HYP_total": 0,
+      "HYP_FN": 0,
+      "HYP_FN_rate": 0.0
+    },
+    "site_27": {
+      "records": 1,
+      "MI_total": 0,
+      "MI_FN": 0,
+      "MI_FN_rate": 0.0,
+      "HYP_total": 0,
+      "HYP_FN": 0,
+      "HYP_FN_rate": 0.0
+    },
+    "site_28": {
+      "records": 3,
+      "MI_total": 0,
+      "MI_FN": 0,
+      "MI_FN_rate": 0.0,
+      "HYP_total": 0,
+      "HYP_FN": 0,
+      "HYP_FN_rate": 0.0
+    },
+    "site_29": {
+      "records": 2,
+      "MI_total": 0,
+      "MI_FN": 0,
+      "MI_FN_rate": 0.0,
+      "HYP_total": 0,
+      "HYP_FN": 0,
+      "HYP_FN_rate": 0.0
+    },
+    "site_30": {
+      "records": 2,
+      "MI_total": 0,
+      "MI_FN": 0,
+      "MI_FN_rate": 0.0,
+      "HYP_total": 0,
+      "HYP_FN": 0,
+      "HYP_FN_rate": 0.0
+    },
+    "site_31": {
+      "records": 1,
+      "MI_total": 0,
+      "MI_FN": 0,
+      "MI_FN_rate": 0.0,
+      "HYP_total": 1,
+      "HYP_FN": 0,
+      "HYP_FN_rate": 0.0
+    },
+    "site_32": {
+      "records": 3,
+      "MI_total": 0,
+      "MI_FN": 0,
+      "MI_FN_rate": 0.0,
+      "HYP_total": 0,
+      "HYP_FN": 0,
+      "HYP_FN_rate": 0.0
+    },
+    "site_33": {
+      "records": 1,
+      "MI_total": 1,
+      "MI_FN": 0,
+      "MI_FN_rate": 0.0,
+      "HYP_total": 1,
+      "HYP_FN": 0,
+      "HYP_FN_rate": 0.0
+    },
+    "site_36": {
+      "records": 2,
+      "MI_total": 0,
+      "MI_FN": 0,
+      "MI_FN_rate": 0.0,
+      "HYP_total": 0,
+      "HYP_FN": 0,
+      "HYP_FN_rate": 0.0
+    },
+    "site_38": {
+      "records": 1,
+      "MI_total": 1,
+      "MI_FN": 0,
+      "MI_FN_rate": 0.0,
+      "HYP_total": 0,
+      "HYP_FN": 0,
+      "HYP_FN_rate": 0.0
+    },
+    "site_40": {
+      "records": 1,
+      "MI_total": 1,
+      "MI_FN": 0,
+      "MI_FN_rate": 0.0,
+      "HYP_total": 0,
+      "HYP_FN": 0,
+      "HYP_FN_rate": 0.0
+    },
+    "site_45": {
+      "records": 2,
+      "MI_total": 0,
+      "MI_FN": 0,
+      "MI_FN_rate": 0.0,
+      "HYP_total": 0,
+      "HYP_FN": 0,
+      "HYP_FN_rate": 0.0
+    },
+    "site_49": {
+      "records": 1,
+      "MI_total": 1,
+      "MI_FN": 0,
+      "MI_FN_rate": 0.0,
+      "HYP_total": 0,
+      "HYP_FN": 0,
+      "HYP_FN_rate": 0.0
+    }
+  }
+}
