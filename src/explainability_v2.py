@@ -48,10 +48,14 @@ EXPLAINED_MODELS = ["multiscale", "federated_r8"]
 DELETION_FRACTIONS = [0.01, 0.02, 0.05, 0.10]
 
 
-def integrated_gradients(model, x, target, steps=64, batch=64):
-    """x: [12, 1000] tensor. Returns (attribution [12,1000], completeness error)."""
-    baseline = torch.zeros_like(x)
-    alphas = (torch.arange(steps, dtype=torch.float32) + 0.5) / steps
+def integrated_gradients(model, x, target, steps=64, batch=64, baseline=None):
+    """x: [12, 1000] tensor. Returns (attribution [12,1000], completeness error, fx, fb)."""
+    model.eval()
+    if baseline is None:
+        baseline = torch.zeros_like(x)
+    else:
+        baseline = baseline.to(x.device, dtype=x.dtype)
+    alphas = (torch.arange(steps, dtype=torch.float32, device=x.device) + 0.5) / steps
     grads = torch.zeros_like(x)
     for i in range(0, steps, batch):
         a = alphas[i:i + batch].view(-1, 1, 1)

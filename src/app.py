@@ -641,7 +641,8 @@ def integrated_gradients(
     model,
     signal,
     target_class,
-    steps=64
+    steps=64,
+    baseline=None
 ):
     """
     Calculate Integrated Gradients attribution using the validated 64-step midpoint
@@ -653,12 +654,14 @@ def integrated_gradients(
     """
     model.eval()
     x = signal[0].detach()
+    base_arg = baseline[0].detach() if baseline is not None else None
     attribution, error, _, _ = ig_v2_core(
         model=model,
         x=x,
         target=target_class,
         steps=steps,
-        batch=steps
+        batch=steps,
+        baseline=base_arg
     )
     return attribution.unsqueeze(0), float(error)
 
@@ -1068,6 +1071,11 @@ if uploaded_file is not None:
                         f" **Baseline note for {explain_class}:** The zero baseline is not neutral for {explain_class} "
                         f"(flat-line input produces an elevated prediction); attributions are relative to this "
                         f"already-positive baseline prediction."
+                    )
+                if explain_class == "NORM" and original[0] == 1 and final[0] == 0:
+                    caption_text += (
+                        " **NORM consistency note:** NORM is suppressed in the final diagnosis because an abnormal class was detected. "
+                        "The attributions shown above explain the underlying raw NORM model score prior to rule suppression."
                     )
                 st.caption(caption_text)
 
