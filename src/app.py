@@ -126,14 +126,19 @@ def prepare_ecg_csv(uploaded_file):
     Validate and prepare an uploaded 12-lead ECG CSV for CardioFed inference.
 
     Requirements:
-      - Valid CSV format with exactly 1,000 samples (10 seconds at 100 Hz).
+      - Valid CSV format with exactly 1,000 samples. Note: having 1,000 rows satisfies the
+        input dimension expected by the model (10 seconds at 100 Hz), but the row count alone
+        cannot verify or ensure that the recording was acquired or resampled at a 100 Hz sampling rate.
       - All 12 standard leads must be present in standard order:
         Lead_I, Lead_II, Lead_III, aVR, aVL, aVF, V1, V2, V3, V4, V5, V6.
       - Finite numeric values (no NaN, null, or Inf).
-      - Preprocessed signal scaling: signals must be model-ready (0.5-40 Hz bandpass
-        filtered and per-lead zero-mean, unit-variance standardized).
-        Raw physical signals (e.g. unscaled millivolts with std << 1 or raw ADC/microvolts
-        with std >> 1) or constant flatlines are rejected with informative error messages.
+      - Preprocessed signal scaling: signals must be per-lead zero-mean and unit-variance
+        standardized consistent with src/preprocessing.py ((signal - mean) / (std + 1e-8)),
+        allowing for reasonable CSV rounding tolerance (std within [0.80, 1.20] and |mean| <= 0.10).
+        Statistical scaling checks catch un-normalized raw voltages (e.g. mV, µV, ADC counts),
+        flatlines, or improperly scaled leads, but passing these statistical checks does not
+        prove or guarantee that proper bandpass filtering (0.5–40 Hz) or correct preprocessing
+        was performed.
     """
 
     try:
@@ -184,7 +189,8 @@ def prepare_ecg_csv(uploaded_file):
     if len(df) != 1000:
         raise ValueError(
             f"Expected exactly 1,000 samples (10 seconds sampled at 100 Hz), "
-            f"but received {len(df)} samples."
+            f"but received {len(df)} samples. Note that 1,000 rows alone cannot "
+            f"verify a 100 Hz sampling rate."
         )
 
     # 5. Validate numeric values, NaN, and Inf
@@ -212,28 +218,49 @@ def prepare_ecg_csv(uploaded_file):
         )
 
     # 6. Signal scaling validation
-    # CardioFed models expect per-lead zero-mean, unit-variance standardized signals (z-scores).
+    # CardioFed models expect per-lead zero-mean, unit-variance standardized signals (z-scores)
+    # consistent with src/preprocessing.py: (signal - mean) / (std + 1e-8).
+    # All 12 leads are validated independently with reasonable CSV rounding tolerance.
+    # Note: Statistical scaling checks detect un-normalized physical units, flatlines, or incorrectly
+    # scaled leads, but passing these checks does NOT prove or guarantee that correct preprocessing
+    # (such as 0.5-40 Hz bandpass filtering) was performed.
     lead_stds = signal_array.std(axis=0)
     lead_means = signal_array.mean(axis=0)
+    lead_max_abs = np.abs(signal_array).max(axis=0)
     mean_std = float(lead_stds.mean())
-    max_abs = float(np.abs(signal_array).max())
+    max_abs = float(lead_max_abs.max())
 
-    # 6a. Flatline / zero-variance check
-    if mean_std < 1e-4:
+    # 6a. Flatline / zero-variance check (all leads or single lead)
+    if (lead_stds < 1e-4).all():
         raise ValueError(
             "The uploaded ECG signal has zero or near-zero variance across all leads (flatline). "
             "Valid ECG signals must contain active physiological waveforms."
         )
+    flat_lead_indices = np.where(lead_stds < 1e-4)[0]
+    if len(flat_lead_indices) > 0:
+        bad_lead = LEADS[flat_lead_indices[0]]
+        raise ValueError(
+            f"Lead '{bad_lead}' has zero or near-zero variance (std = {lead_stds[flat_lead_indices[0]]:.4f}, flatline). "
+            f"Valid ECG signals must contain active physiological waveforms across all 12 leads."
+        )
 
     # 6b. Raw millivolts check (un-normalized raw physical voltage)
     # Physical 12-lead ECG signals in millivolts typically have lead standard deviations between 0.05 and 0.25 mV.
-    # Properly z-scored signals have per-lead standard deviations near 1.0 (mean_std ≈ 1.0).
+    # Properly z-scored signals have per-lead standard deviations near 1.0 (expected lead std ≈ 1.0).
     if mean_std < 0.25:
         raise ValueError(
             f"The uploaded ECG has a mean lead standard deviation of {mean_std:.3f}, "
             f"which is characteristic of un-normalized raw physical voltage (e.g., millivolts). "
             f"CardioFed models require per-lead Z-score normalized signals (expected lead std ≈ 1.0). "
             f"Please preprocess your signal with CardioFed's 0.5–40 Hz bandpass filter and z-score standardization."
+        )
+    low_std_indices = np.where(lead_stds < 0.25)[0]
+    if len(low_std_indices) > 0:
+        bad_lead = LEADS[low_std_indices[0]]
+        raise ValueError(
+            f"Lead '{bad_lead}' has a standard deviation of {lead_stds[low_std_indices[0]]:.3f}, "
+            f"which is characteristic of un-normalized raw physical voltage (e.g., millivolts) or an incorrectly scaled lead. "
+            f"CardioFed models require per-lead Z-score normalized signals (expected lead std ≈ 1.0)."
         )
 
     # 6c. Raw microvolts or uncalibrated ADC counts check (excessive amplitude)
@@ -246,14 +273,36 @@ def prepare_ecg_csv(uploaded_file):
             f"counts, or severe noise. CardioFed models require per-lead Z-score normalized signals "
             f"(expected lead std ≈ 1.0, typical peaks within ±25)."
         )
-
-    # 6d. Severe DC offset check (uncentered baseline)
-    max_lead_mean_abs = float(np.abs(lead_means).max())
-    if max_lead_mean_abs > 10.0:
-        bad_lead_idx = int(np.argmax(np.abs(lead_means)))
+    excessive_lead_indices = np.where((lead_stds > 20.0) | (lead_max_abs > 100.0))[0]
+    if len(excessive_lead_indices) > 0:
+        bad_lead = LEADS[excessive_lead_indices[0]]
         raise ValueError(
-            f"Lead '{LEADS[bad_lead_idx]}' has a significant DC baseline offset (mean = {lead_means[bad_lead_idx]:.2f}). "
-            f"CardioFed models require zero-mean standardized signals (expected lead mean ≈ 0.0)."
+            f"Lead '{bad_lead}' contains excessively large values (std = {lead_stds[excessive_lead_indices[0]]:.1f}, "
+            f"max absolute amplitude = {lead_max_abs[excessive_lead_indices[0]]:.1f}). "
+            f"This indicates raw microvolts (µV), uncalibrated ADC counts, or severe noise. "
+            f"CardioFed models require per-lead Z-score normalized signals."
+        )
+
+    # 6d. Per-lead incorrect scaling check (outside reasonable CSV rounding tolerance [0.80, 1.20])
+    # Signals standardized via src/preprocessing.py have std = 1.0 per lead.
+    scale_err_indices = np.where((lead_stds < 0.80) | (lead_stds > 1.20))[0]
+    if len(scale_err_indices) > 0:
+        bad_lead = LEADS[scale_err_indices[0]]
+        raise ValueError(
+            f"Lead '{bad_lead}' is incorrectly scaled (std = {lead_stds[scale_err_indices[0]]:.3f}). "
+            f"CardioFed models require per-lead Z-score normalized signals (expected lead std ≈ 1.0, "
+            f"acceptable range 0.80–1.20 allowing for CSV rounding tolerance)."
+        )
+
+    # 6e. Per-lead DC baseline offset check (allowed |mean| <= 0.10 allowing for CSV rounding tolerance)
+    # Signals standardized via src/preprocessing.py have mean = 0.0 per lead.
+    offset_err_indices = np.where(np.abs(lead_means) > 0.10)[0]
+    if len(offset_err_indices) > 0:
+        bad_lead = LEADS[offset_err_indices[0]]
+        raise ValueError(
+            f"Lead '{bad_lead}' has a significant DC baseline offset (mean = {lead_means[offset_err_indices[0]]:.3f}). "
+            f"CardioFed models require zero-mean standardized signals (expected lead mean ≈ 0.0, "
+            f"allowed absolute mean ≤ 0.10 allowing for CSV rounding tolerance)."
         )
 
     # Convert to PyTorch tensor of shape [1, 12, 1000]
@@ -712,11 +761,18 @@ if input_mode == "CSV File":
         "**CSV Upload Requirements (Preprocessed, Model-Ready Signals)**\n\n"
         "CardioFed deep-learning models evaluate preprocessed 12-lead ECG signals directly. "
         "Uploaded CSVs must adhere to the following specification:\n\n"
-        "- **Signal Dimensions**: Exactly 1,000 samples (10 seconds sampled at 100 Hz).\n"
+        "- **Signal Dimensions**: Exactly 1,000 samples (10 seconds sampled at 100 Hz). "
+        "*(Note: 1,000 rows alone cannot verify that the recording was sampled at 100 Hz; "
+        "users must ensure their recordings are properly acquired or resampled to 100 Hz).*\n"
         "- **Required Leads**: All 12 standard leads in standard order: "
         "`Lead_I`, `Lead_II`, `Lead_III`, `aVR`, `aVL`, `aVF`, `V1`, `V2`, `V3`, `V4`, `V5`, `V6`.\n"
         "- **Preprocessing Status**: Signals **must already be filtered** (0.5–40 Hz bandpass) and "
-        "**per-lead Z-score normalized** (zero mean, unit variance per lead).\n"
+        "**per-lead Z-score normalized** (zero mean, unit variance per lead as in `src/preprocessing.py`).\n"
+        "- **Validation Scope**: All 12 leads are validated independently for mean (≈ 0.0) and "
+        "standard deviation (≈ 1.0) allowing for reasonable CSV rounding tolerance. "
+        "Statistical scaling checks reject flatlines, raw physical voltages (mV, µV, ADC counts), "
+        "and incorrectly scaled leads; however, passing statistical scaling checks does not prove or guarantee "
+        "that correct bandpass filtering or preprocessing was performed.\n"
         "- **Note on Raw Signals**: The application does **not** automatically filter, resample, or normalize raw ECG signals "
         "because input sampling frequencies and physical voltage units (e.g., mV, µV, ADC counts) cannot be reliably inferred. "
         "Un-normalized signals (such as raw millivolts) will be rejected by input validation."
@@ -726,11 +782,13 @@ if input_mode == "CSV File":
         st.markdown(
             """
             **How to prepare your CSV file for CardioFed:**
-            1. **Sampling Rate**: Resample your 10-second recording to 100 Hz (1,000 rows).
-            2. **Filtering**: Apply a 0.5–40 Hz Butterworth bandpass filter (zero-phase).
+            1. **Sampling Rate**: Resample your 10-second recording to 100 Hz (1,000 rows). *Note: Row count alone cannot verify a 100 Hz sampling rate.*
+            2. **Filtering**: Apply a 0.5–40 Hz Butterworth bandpass filter (order 3, zero-phase as in `src/preprocessing.py`).
             3. **Normalization**: Standardize each lead independently: `(signal - mean) / (std + 1e-8)`.
             4. **Columns**: Name the 12 columns `Lead_I`, `Lead_II`, `Lead_III`, `aVR`, `aVL`, `aVF`, `V1`, `V2`, `V3`, `V4`, `V5`, `V6`.
             *(Optional metadata columns such as `ecg_id` or `time_seconds` are permitted as long as the 12 leads appear in standard order).*
+
+            *Important*: Statistical scaling checks confirm per-lead zero mean and unit variance within CSV rounding tolerance, but they do not prove that proper 0.5–40 Hz bandpass filtering was performed.
             """
         )
 

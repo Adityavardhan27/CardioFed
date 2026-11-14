@@ -199,3 +199,71 @@ def test_reject_severe_dc_baseline_offset():
 
     with pytest.raises(ValueError, match="significant DC baseline offset"):
         prepare_ecg_csv(_df_to_csv_io(df))
+
+
+# -----------------------------------------------------------------------------
+# Independent Per-Lead Validation Tests
+# -----------------------------------------------------------------------------
+
+def test_reject_single_flat_lead():
+    """Verify that a single flatline lead cannot pass validation when other 11 leads are valid."""
+    df = _generate_valid_ecg_df(1000)
+    df["Lead_II"] = 0.0  # single flat lead
+
+    with pytest.raises(ValueError, match="Lead 'Lead_II' has zero or near-zero variance"):
+        prepare_ecg_csv(_df_to_csv_io(df))
+
+
+def test_reject_single_incorrectly_scaled_lead_too_small():
+    """Verify that a single lead with reduced scale (std ~ 0.5) is rejected."""
+    df = _generate_valid_ecg_df(1000)
+    df["V2"] = df["V2"] * 0.5  # under-scaled lead
+
+    with pytest.raises(ValueError, match="Lead 'V2' is incorrectly scaled"):
+        prepare_ecg_csv(_df_to_csv_io(df))
+
+
+def test_reject_single_incorrectly_scaled_lead_too_large():
+    """Verify that a single lead with excessive scaling (std ~ 2.0) is rejected."""
+    df = _generate_valid_ecg_df(1000)
+    df["Lead_III"] = df["Lead_III"] * 2.0  # over-scaled lead
+
+    with pytest.raises(ValueError, match="Lead 'Lead_III' is incorrectly scaled"):
+        prepare_ecg_csv(_df_to_csv_io(df))
+
+
+def test_reject_single_lead_unnormalized_millivolts():
+    """Verify that a single raw millivolt lead among valid leads is detected and rejected."""
+    df = _generate_valid_ecg_df(1000)
+    rng = np.random.default_rng(7)
+    df["V4"] = (rng.standard_normal(1000) * 0.15).astype(np.float32)
+
+    with pytest.raises(ValueError, match="Lead 'V4' has a standard deviation of .* characteristic of un-normalized"):
+        prepare_ecg_csv(_df_to_csv_io(df))
+
+
+def test_reject_single_lead_significant_dc_offset():
+    """Verify that a significant DC baseline offset in a single lead is detected and rejected."""
+    df = _generate_valid_ecg_df(1000)
+    df["aVF"] = df["aVF"] + 1.5  # significant DC offset in one lead
+
+    with pytest.raises(ValueError, match="Lead 'aVF' has a significant DC baseline offset"):
+        prepare_ecg_csv(_df_to_csv_io(df))
+
+
+def test_accept_valid_ecg_csv_with_rounding():
+    """Verify that valid preprocessed signals rounded to 2 decimal places pass validation."""
+    df = _generate_valid_ecg_df(1000)
+    df_rounded = df.round(2)
+    signal, ecg_df = prepare_ecg_csv(_df_to_csv_io(df_rounded))
+
+    assert signal.shape == (1, 12, 1000)
+    assert len(ecg_df) == 1000
+
+
+def test_reject_wrong_sample_count_clarification():
+    """Verify that sample count error clarifies that 1,000 rows alone cannot verify 100 Hz."""
+    df_short = _generate_valid_ecg_df(900)
+    with pytest.raises(ValueError, match="1,000 rows alone cannot verify a 100 Hz sampling rate"):
+        prepare_ecg_csv(_df_to_csv_io(df_short))
+
