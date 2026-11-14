@@ -128,3 +128,31 @@ Seed-to-seed variability is reported as mean ± SD across seeds.
 4. **FedAvg rounds.** 20 rounds were run (minimum 10 required). Validation
    macro-AUROC peaked at rounds 13–14 in all three seeds and did not improve
    afterwards, so no further rounds were run.
+5. **Multiple-comparison inferential procedure correction (2026-11-14).**
+   - *Original plan:* Sections 4 and 5 pre-specified two-sided p-values with
+     Holm correction across the five primary tests (C1, C2) per metric,
+     declaring differences significant only if Holm-adjusted p < 0.05.
+   - *Methodological issue:* The original analysis implementation computed
+     2 * min(P(d <= 0), P(d >= 0)) from bootstrap replicates and treated it as
+     a formal hypothesis-test p-value before applying Holm step-down adjustment.
+     As established during the Step 5 statistical audit, this quantity is an
+     empirical bootstrap sign-proportion estimate measuring replicate sign
+     consistency, not a valid null-hypothesis test p-value derived under an
+     exchangeable null hypothesis H_0. Applying Holm-Bonferroni correction to
+     descriptive bootstrap sign proportions is methodologically invalid and
+     does not provide valid family-wise error rate (FWER) control.
+   - *Methodological correction:* The invalid Holm correction on sign
+     proportions was removed. Unadjusted paired 95% percentile bootstrap
+     confidence intervals [ci_low, ci_high] are reported as primary uncertainty
+     estimates, alongside ci_excludes_zero and descriptive bootstrap_sign_prob.
+     However, unadjusted confidence intervals do not provide family-wise error
+     control across multiple comparisons. Consequently, formal claims of
+     family-wise statistical significance are withdrawn. Comparisons are
+     interpreted through unadjusted paired intervals and sign proportions,
+     noting that intervals excluding zero indicate observed performance
+     separation but do not substitute for a formal multiple-comparison hypothesis
+     test.
+   - *Artifacts:* Original outputs under `results/p2/analysis/` are retained as
+     historical records; authoritative corrected outputs are placed in
+     `results/p2/analysis_corrected/`.
+

@@ -713,7 +713,7 @@ def plot_integrated_gradients(
     im = axes[1].imshow(
         attribution_np,
         aspect="auto",
-        cmap="seismic",
+        cmap="RdBu_r",
         norm=TwoSlopeNorm(vmin=-lim, vcenter=0.0, vmax=lim),
         interpolation="nearest",
         extent=[0, 10, 11.5, -0.5]
@@ -1055,7 +1055,7 @@ if uploaded_file is not None:
 
                 plt.close(attribution_fig)
 
-                st.caption(
+                caption_text = (
                     f"Integrated Gradients estimates how input signal "
                     f"features contribute to the selected model output "
                     f"(64-step midpoint Riemann sum, completeness error: {completeness_error:.2%}). "
@@ -1063,6 +1063,13 @@ if uploaded_file is not None:
                     f"attribution values respectively. This is a model "
                     f"explanation, not clinical evidence."
                 )
+                if explain_class in ["STTC", "HYP"]:
+                    caption_text += (
+                        f" **Baseline note for {explain_class}:** The zero baseline is not neutral for {explain_class} "
+                        f"(flat-line input produces an elevated prediction); attributions are relative to this "
+                        f"already-positive baseline prediction."
+                    )
+                st.caption(caption_text)
 
             # --------------------------------------------------
             # PREDICTION TABLE
