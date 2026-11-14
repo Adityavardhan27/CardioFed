@@ -176,15 +176,20 @@ To compare models $A$ and $B$:
    $$\tilde{p}_{(k)} = \min(1, (m - k + 1) \cdot p_{(k)})$$
 3. Enforce monotonicity:
    $$\tilde{p}_{(k)} = \max(\tilde{p}_{(k-1)}, \tilde{p}_{(k)})$$
-### 6.4 Invalid Bootstrap Samples (Single-Class Subsets)
-In multi-label classification bootstrap resampling:
-- If a bootstrap draw misses all positive (or all negative) examples for a low-prevalence class, $\text{AUROC}$ for that class is mathematically undefined. Calling `roc_auc_score` on single-class data returns `NaN` (with an `UndefinedMetricWarning`).
-- Unchecked, a single `NaN` in `pc_auc` propagates to `np.mean(pc_auc)`, which produces `NaN` in `macro_auc` and causes `np.percentile` across bootstrap replicates to collapse to `NaN`.
-- **Audit & Resolution:**
-  1. `patient_bootstrap_indices(patients, n_boot, seed, y=y_test)` accepts the target label array $y$. It checks that every class biclassed in the source set remains biclassed in the resample; invalid draws lacking class representation are automatically discarded and redrawn.
-  2. `macro_auc` in `src/statistical_analysis.py` and `src/p2_analysis.py` explicitly filters classes with `len(np.unique(y[:, i])) == 2`, preventing undefined metric errors.
-  3. `ci(a)` and per-class AUROC percentile functions filter finite values (`np.isfinite`), preventing single undefined draws from corrupting the entire confidence interval.
-  4. Regression tests in `tests/test_dataset_audit.py` (`test_macro_auc_handles_single_class_samples` and `test_patient_bootstrap_resamples_when_class_missing`) verify this behavior.
+### 6.4 Assessment of Rejection Sampling vs. Unconditional Patient Bootstrap
+When evaluating confidence intervals for multi-label classification using patient-level bootstrap:
+- **Statistical Critique of Rejection-Based Bootstrap:**
+  Conditioning bootstrap draws on having $\ge 1$ positive and $\ge 1$ negative example for every class (rejection sampling) truncates the empirical sampling distribution. For a low-prevalence class with true prevalence $p$, observing 0 cases in a sample has non-zero probability under sampling variability ($P(K=0) = (1-p)^N > 0$). Discarding samples with 0 positives artificially truncates the lower tail of class prevalence, shifts the effective conditional prevalence upward, and artificially compresses the confidence intervals for rare conditions.
+- **Adopted Defensible Methodology:**
+  1. **Unconditional Patient-Level Resampling:** `patient_bootstrap_indices` samples patient clusters uniformly with replacement without rejection, strictly preserving patient clustering and empirical sampling variance.
+  2. **Consistent Complete-Class Definition for Macro-AUROC:**
+     To prevent partial-class averages from distorting macro-AUROC comparisons between models (e.g. omitting HYP would artificially inflate macro-AUROC from ~0.906 to ~0.930), macro-AUROC is strictly defined as the mean over all 5 pre-specified target superclasses. If a bootstrap replicate misses any class, its 5-class macro-AUROC is recorded as undefined (`NaN`). Single-model macro-AUROC CIs and paired model macro-AUROC differences are computed only over consistent replicates where all target classes are evaluated.
+  3. **Transparent Undefined Replicate Reporting:**
+     Every evaluation table (`overall_with_ci.csv`, `per_class_with_ci.csv`, and `paired_differences.csv`) and `bootstrap_summary.json` explicitly outputs:
+     - `valid_bootstrap_samples`: Count of replicates where all required classes were present.
+     - `excluded_bootstrap_samples`: Count of replicates excluded due to missing class representation.
+     On the full PTB-XL fold-10 test set ($N=2,157$ records, $1,876$ patients, minimum class support $n=262$), all 2,000 bootstrap replicates have all 5 classes present (`valid_bootstrap_samples = 2000`, `excluded_bootstrap_samples = 0`). For small subgroup cohorts, the reporting transparently exposes sample coverage without inducing rejection bias.
+  4. **Regression Tests:** Verified in `tests/test_dataset_audit.py` (`test_macro_auc_returns_nan_on_incomplete_classes` and `test_bootstrap_transparent_exclusion_tracking`).
 
 ---
 
@@ -200,13 +205,12 @@ During the audit, three nuances were identified and corrected:
    - *Previous state:* Unconditionally called `np.load("data/processed/y.npy")`. In environments without Git-LFS smudging, this crashed with `ValueError: Cannot load file containing pickled data`.
    - *Correction:* Added `is_real_file()` check. If files are LFS pointers, it loads `processed_metadata.csv` (which is tracked as clean text) and reconstructs target labels using `load_metadata`, performing all shape, fold, patient-wise, and split audits cleanly.
 
-3. **Bootstrap Single-Class Representation Safeguards:**
-   - *Previous state:* In `src/statistical_analysis.py` and `src/p2_analysis.py`, `macro_auc` and the bootstrap inner loop evaluated `roc_auc_score` without checking whether both classes were present in the sample, risking `NaN` propagation if a rare class had only positive or only negative examples.
-   - *Correction:* Updated `patient_bootstrap_indices` to redraw invalid samples where a class lacks binary representation, guarded `macro_auc` to evaluate only biclassed targets, and filtered finite values in CI percentile calculations.
+3. **Bootstrap Single-Class Representation & Complete-Class Consistency:**
+   - *Previous state:* Rejection sampling was initially considered to eliminate `NaN`s, but conditioned the bootstrap distribution and risked biasing confidence intervals for rare classes. Conversely, unhandled single-class samples caused `roc_auc_score` to return `NaN` and crash percentile calculations.
+   - *Correction:* Implemented unconditional patient-level cluster bootstrap with complete-class consistency for macro-AUROC, guarded `macro_auc` against incomplete class definitions, and added transparent reporting of valid vs excluded replicates across overall, per-class, and paired comparison outputs.
 
 4. **New Audit Test Suite (`tests/test_dataset_audit.py`):**
-   - Added 12 automated unit and integration tests verifying label mapping, NORM mutual exclusivity, metadata alignment, split counts, patient isolation, intra-record signal normalization, metric computation, post-hoc NORM logic, patient bootstrap clustering, single-class bootstrap handling, and Holm correction.
-
+   - Added 12 automated unit and integration tests verifying label mapping, NORM mutual exclusivity, metadata alignment, split counts, patient isolation, intra-record signal normalization, metric computation, post-hoc NORM logic, patient bootstrap clustering, single-class incomplete handling, and Holm correction.
 
 ---
 
@@ -215,3 +219,5 @@ During the audit, three nuances were identified and corrected:
 1. **Clinician Diagnostic Heuristics in PTB-XL:** SCP code likelihood assignments reflect subjective clinician interpretations. Filtering at `likelihood > 0` removes non-positive statements, but clinical nuances in borderline cases remain in the raw data.
 2. **Voltage Erasure from Per-Record Z-Scoring:** Standard intra-record z-score normalisation standardises each lead to variance 1.0, eliminating absolute millivolt voltages needed for classical amplitude criteria (e.g. Sokolow-Lyon criteria for HYP).
 3. **Local Git-LFS Requirements:** Full binary signal evaluations require local execution of `git lfs pull` to download raw `.dat` and processed `.npy` arrays. All metadata, splits, and evaluation summaries remain fully verifiable from committed files.
+4. **Subgroup Sample Size Constraints in Bootstrap:** In small patient cohorts (e.g., individual recording sites or demographic slices with $<50$ patients), low-prevalence classes will naturally be omitted in some bootstrap resamples. The audit's transparent exclusion reporting documents the exact sample coverage, but very small sub-cohorts should be interpreted alongside class prevalence and support counts.
+

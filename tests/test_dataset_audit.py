@@ -233,9 +233,9 @@ def test_holm_bonferroni_correction():
     assert np.all(adjusted >= 0.0)
 
 
-def test_macro_auc_handles_single_class_samples():
-    """Verify macro_auc does not return NaN or crash when some classes have only one unique label."""
-    # Class 0 and 1 have both 0 and 1; Class 2, 3, 4 have all 0s
+def test_macro_auc_returns_nan_on_incomplete_classes():
+    """Verify macro_auc returns NaN when any class has only one unique label to enforce consistent class definition."""
+    # Class 0 and 1 have both 0 and 1; Class 2, 3, 4 have only 0s
     y = np.zeros((10, 5), dtype=np.float32)
     y[:5, 0] = 1.0
     y[:5, 1] = 1.0
@@ -246,28 +246,63 @@ def test_macro_auc_handles_single_class_samples():
     probs[:5, 1] = 0.8
     probs[5:, 1] = 0.2
 
-    # AUROC for class 0 and 1 is 1.0; classes 2, 3, 4 are undefined (only negative examples)
+    # Because classes 2, 3, 4 are undefined, 5-class macro-AUROC is NaN
     score = macro_auc(probs, y)
-    assert np.isfinite(score)
-    assert score == pytest.approx(1.0)
+    assert np.isnan(score)
+
+    # When all 5 classes are valid (biclassed), macro_auc computes exact mean
+    y_full = np.zeros((10, 5), dtype=np.float32)
+    for c in range(5):
+        y_full[:5, c] = 1.0
+    score_full = macro_auc(probs, y_full)
+    assert np.isfinite(score_full)
+    assert score_full >= 0.0 and score_full <= 1.0
 
 
-def test_patient_bootstrap_resamples_when_class_missing():
-    """Verify patient_bootstrap_indices with y resamples until all biclassed classes have both labels."""
-    # 6 patients: P1-P5 have normal/abnormal, but only P6 has the positive case for class 1
+def test_bootstrap_transparent_exclusion_tracking():
+    """Verify unconditional bootstrap handles rare classes by tracking and reporting excluded replicates."""
+    # 6 patients: P1-P5 have class 0, but only P6 has the positive case for class 1
     patients = np.array(["P1", "P2", "P3", "P4", "P5", "P6"])
     y = np.zeros((6, 2), dtype=np.float32)
-    y[0, 0] = 1.0  # P1 has class 0
-    y[5, 1] = 1.0  # only P6 has class 1
+    y[0, 0] = 1.0
+    y[5, 1] = 1.0
 
-    # In random bootstrap, P6 is missed in (5/6)^6 ≈ 33.5% of draws.
-    # Passing y ensures patient_bootstrap_indices rejects invalid draws and yields valid samples.
-    samples = list(patient_bootstrap_indices(patients, n_boot=25, seed=123, y=y))
-    assert len(samples) == 25
-    for s in samples:
-        yb = y[s]
-        assert len(np.unique(yb[:, 0])) == 2
-        assert len(np.unique(yb[:, 1])) == 2
+    probs_a = np.array([[0.8, 0.2], [0.7, 0.1], [0.6, 0.3], [0.2, 0.1], [0.3, 0.2], [0.1, 0.9]])
+    probs_b = np.array([[0.7, 0.3], [0.6, 0.2], [0.5, 0.4], [0.3, 0.2], [0.2, 0.3], [0.2, 0.8]])
+
+    # Unconditional bootstrap without rejection
+    n_boot = 50
+    indices = list(patient_bootstrap_indices(patients, n_boot=n_boot, seed=42))
+    assert len(indices) == n_boot
+
+    auc_a = []
+    auc_b = []
+    for ix in indices:
+        yb = y[ix]
+        # Valid only if all classes have both 0 and 1
+        all_valid = all(len(np.unique(yb[:, c])) == 2 for c in range(2))
+        if all_valid:
+            auc_a.append(macro_auc(probs_a[ix], yb))
+            auc_b.append(macro_auc(probs_b[ix], yb))
+        else:
+            auc_a.append(float("nan"))
+            auc_b.append(float("nan"))
+
+    auc_a = np.array(auc_a)
+    auc_b = np.array(auc_b)
+
+    valid_mask = np.isfinite(auc_a) & np.isfinite(auc_b)
+    n_valid = int(valid_mask.sum())
+    n_excluded = int((~valid_mask).sum())
+
+    assert n_valid + n_excluded == n_boot
+    # In unconditional sampling with 1 rare patient, some draws will naturally miss P6
+    assert n_excluded > 0, "Expected some draws to miss the single positive patient"
+    # Paired comparisons evaluate only on valid replicates where all classes are defined
+    d = auc_a[valid_mask] - auc_b[valid_mask]
+    assert len(d) == n_valid
+    assert np.all(np.isfinite(d))
+
 
 
 

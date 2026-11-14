@@ -48,12 +48,15 @@ COMPARISONS = [
 
 
 def macro_auc(probs, y):
-    aucs = [
-        float(roc_auc_score(y[:, i], probs[:, i]))
-        for i in range(5)
-        if len(np.unique(y[:, i])) == 2
-    ]
-    return float(np.mean(aucs)) if aucs else float("nan")
+    """Compute macro-AUROC across all classes in y if all are biclassed, else NaN.
+
+    Enforces a consistent complete-class definition across all replicates.
+    """
+    n_classes = y.shape[1]
+    for i in range(n_classes):
+        if len(np.unique(y[:, i])) < 2:
+            return float("nan")
+    return float(np.mean([roc_auc_score(y[:, i], probs[:, i]) for i in range(n_classes)]))
 
 
 def per_class_f1(pred, y):
@@ -74,33 +77,19 @@ def holm(pvalues):
     return adjusted
 
 
-def patient_bootstrap_indices(patients, n_boot, seed, y=None):
-    """Yield record indices for each bootstrap sample of patients.
+def patient_bootstrap_indices(patients, n_boot, seed):
+    """Yield record indices for each unconditional bootstrap sample of patients.
 
-    If y is provided, samples where any class present in y has only
-    positive or only negative examples are discarded and redrawn,
-    ensuring exactly n_boot valid bootstrap samples.
+    Resamples unique patient IDs with replacement without conditioning or
+    rejection, preserving patient clustering and true empirical variance.
     """
     rng = np.random.default_rng(seed)
     unique = np.unique(patients)
     groups = {p: np.where(patients == p)[0] for p in unique}
-
-    biclased_classes = []
-    if y is not None:
-        for i in range(y.shape[1]):
-            if len(np.unique(y[:, i])) == 2:
-                biclased_classes.append(i)
-
-    yielded = 0
-    while yielded < n_boot:
+    for _ in range(n_boot):
         chosen = rng.choice(unique, size=len(unique), replace=True)
-        ix = np.concatenate([groups[p] for p in chosen])
-        if y is not None and biclased_classes:
-            yb = y[ix]
-            if not all(len(np.unique(yb[:, i])) == 2 for i in biclased_classes):
-                continue
-        yield ix
-        yielded += 1
+        yield np.concatenate([groups[p] for p in chosen])
+
 
 
 
@@ -153,34 +142,48 @@ def main(args):
     cls_f1 = {n: [] for n in names}
     preds = {n: (probs[n] >= thresholds[n]).astype(int) for n in names}
 
-    for ix in patient_bootstrap_indices(patients, args.n_boot, args.seed, y=y_test):
+    for ix in patient_bootstrap_indices(patients, args.n_boot, args.seed):
         yb = y_test[ix]
+        class_valid = [bool(len(np.unique(yb[:, i])) == 2) for i in range(5)]
+        all_classes_valid = all(class_valid)
+
         for n in names:
             pc_auc = [
                 float(roc_auc_score(yb[:, i], probs[n][ix, i]))
-                if len(np.unique(yb[:, i])) == 2
+                if class_valid[i]
                 else float("nan")
                 for i in range(5)
             ]
             pc_f1 = per_class_f1(preds[n][ix], yb)
             cls_auc[n].append(pc_auc)
             cls_f1[n].append(pc_f1)
-            valid_auc = [v for v in pc_auc if np.isfinite(v)]
-            auc_s[n].append(float(np.mean(valid_auc)) if valid_auc else float("nan"))
+            # Consistent 5-class macro-AUROC across replicates
+            if all_classes_valid:
+                auc_s[n].append(float(np.mean(pc_auc)))
+            else:
+                auc_s[n].append(float("nan"))
             f1_s[n].append(float(np.mean(pc_f1)))
 
-    def ci(a):
+    def ci_and_counts(a):
         a = np.asarray(a)
         valid = a[np.isfinite(a)]
-        if len(valid) == 0:
-            return [float("nan"), float("nan")]
-        return [float(np.percentile(valid, 2.5)), float(np.percentile(valid, 97.5))]
+        n_total = len(a)
+        n_valid = int(len(valid))
+        n_excluded = int(n_total - n_valid)
+        if n_valid == 0:
+            return float("nan"), float("nan"), n_valid, n_excluded
+        return (
+            float(np.percentile(valid, 2.5)),
+            float(np.percentile(valid, 97.5)),
+            n_valid,
+            n_excluded,
+        )
 
     overall, per_class = [], []
     for n in names:
         point = compute_metrics(probs[n], y_test, thresholds[n])
-        lo_a, hi_a = ci(auc_s[n])
-        lo_f, hi_f = ci(f1_s[n])
+        lo_a, hi_a, val_a, exc_a = ci_and_counts(auc_s[n])
+        lo_f, hi_f, val_f, exc_f = ci_and_counts(f1_s[n])
         overall.append({
             "model": n, "label": MODELS[n]["label"],
             "macro_auroc": point["macro_auroc"],
@@ -189,23 +192,26 @@ def main(args):
             "macro_f1_ci_low": lo_f, "macro_f1_ci_high": hi_f,
             "hamming_loss": point["hamming_loss"],
             "subset_accuracy": point["subset_accuracy"],
+            "valid_bootstrap_samples": val_a,
+            "excluded_bootstrap_samples": exc_a,
         })
         ca, cf = np.array(cls_auc[n]), np.array(cls_f1[n])
         for i, c in enumerate(CLASSES):
-            valid_ca = ca[:, i][np.isfinite(ca[:, i])]
-            auc_ci_low = float(np.percentile(valid_ca, 2.5)) if len(valid_ca) else float("nan")
-            auc_ci_high = float(np.percentile(valid_ca, 97.5)) if len(valid_ca) else float("nan")
+            lo_ca, hi_ca, val_ca, exc_ca = ci_and_counts(ca[:, i])
+            lo_cf, hi_cf, val_cf, exc_cf = ci_and_counts(cf[:, i])
             per_class.append({
                 "model": n, "class": c,
                 "auroc": point["per_class_auroc"][c],
-                "auroc_ci_low": auc_ci_low,
-                "auroc_ci_high": auc_ci_high,
+                "auroc_ci_low": lo_ca,
+                "auroc_ci_high": hi_ca,
                 "f1": point["per_class_f1"][c],
-                "f1_ci_low": float(np.percentile(cf[:, i], 2.5)),
-                "f1_ci_high": float(np.percentile(cf[:, i], 97.5)),
+                "f1_ci_low": lo_cf,
+                "f1_ci_high": hi_cf,
                 "precision": point["per_class_precision"][c],
                 "recall": point["per_class_recall"][c],
                 "support": point["per_class_support"][c],
+                "valid_bootstrap_samples": val_ca,
+                "excluded_bootstrap_samples": exc_ca,
             })
 
     rows = []
@@ -213,16 +219,29 @@ def main(args):
         if a not in names or b not in names:
             continue
         for metric, samples in (("macro_auroc", auc_s), ("macro_f1", f1_s)):
-            d = np.array(samples[a]) - np.array(samples[b])
+            sa, sb = np.array(samples[a]), np.array(samples[b])
+            valid_mask = np.isfinite(sa) & np.isfinite(sb)
+            valid_count = int(valid_mask.sum())
+            excluded_count = int((~valid_mask).sum())
+            if valid_count == 0:
+                ci_low, ci_high, p = float("nan"), float("nan"), float("nan")
+            else:
+                d = sa[valid_mask] - sb[valid_mask]
+                ci_low = float(np.percentile(d, 2.5))
+                ci_high = float(np.percentile(d, 97.5))
+                p = 2 * min((d <= 0).mean(), (d >= 0).mean())
+                p = float(min(1.0, max(p, 1.0 / valid_count)))
+
             point_a = [r for r in overall if r["model"] == a][0][metric]
             point_b = [r for r in overall if r["model"] == b][0][metric]
-            p = 2 * min((d <= 0).mean(), (d >= 0).mean())
             rows.append({
                 "model_a": a, "model_b": b, "question": question,
                 "metric": metric, "difference": point_a - point_b,
-                "ci_low": float(np.percentile(d, 2.5)),
-                "ci_high": float(np.percentile(d, 97.5)),
-                "p_value": float(min(1.0, max(p, 1.0 / args.n_boot))),
+                "ci_low": ci_low,
+                "ci_high": ci_high,
+                "p_value": p,
+                "valid_bootstrap_samples": valid_count,
+                "excluded_bootstrap_samples": excluded_count,
             })
     diffs = pd.DataFrame(rows)
     for metric in ("macro_auroc", "macro_f1"):
@@ -237,8 +256,13 @@ def main(args):
     summary = {
         "test_records": int(len(y_test)),
         "test_patients": int(len(np.unique(patients))),
-        "bootstrap": {"resampling_unit": "patient", "n_boot": args.n_boot,
-                      "seed": args.seed, "interval": "95% percentile"},
+        "bootstrap": {
+            "resampling_unit": "patient",
+            "n_boot": args.n_boot,
+            "seed": args.seed,
+            "interval": "95% percentile",
+            "policy": "unconditional cluster bootstrap with complete-class consistency for macro-AUROC and transparent reporting of undefined replicates",
+        },
         "thresholds": "validation-tuned thresholds from each original evaluation JSON",
         "p_value_floor": f"p-values are floored at 1/n_boot = {1.0 / args.n_boot}",
         "reproduction_max_abs_diff": reproduced,
