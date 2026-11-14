@@ -9,6 +9,38 @@ Primary models are reproducible from the committed training code.
 `multiscale_legacy` was trained by an earlier version of the multi-scale
 training script that is no longer in the repository; it is kept only for
 transparency and is not part of the primary comparison.
+
+Final Model Selection
+---------------------
+The selected centralized model for inference (``DEFAULT_CENTRALIZED``) is
+the **multiscale** (scheduler experiment, seed 42, best epoch 10).
+
+Selection rationale (see also RESULTS.md §3 and §10):
+  1. Reproducibility — training code (``src/train_multiscale.py``) is retained.
+  2. Complete evaluation — both validation and fold-10 test metrics exist and
+     are verified by ``tests/test_research_artifacts.py::test_reported_test_metrics_reproduce``.
+  3. Architecture consistency — Multi-Scale Residual CNN is the project's core
+     contribution, shared with the federated models for a fair comparison.
+  4. Statistical indistinguishability — paired patient-level bootstrap
+     (2 000 resamples) shows no significant difference in macro-AUROC or
+     macro-F1 versus the baseline CNN or federated-8-round models (all
+     Holm-corrected p ≥ 0.35).
+  5. HYP (the weakest class, F1 ≈ 0.46) is equally weak across all models;
+     no checkpoint demonstrably improves it.
+
+Models *not* selected and why:
+  - baseline: different (simpler) architecture; would undermine the
+    multi-scale residual contribution the project evaluates.
+  - multiscale_legacy: training code not retained; not reproducible.
+  - federated_r8: had not fully converged (see §10.1); exists mainly to
+    demonstrate privacy-preserving viability, not as a recommended
+    deployment artefact.
+  - finetuned_v1 / finetuned_v2: no test-fold evaluation exists; selecting
+    them would be indefensible without test metrics.
+  - federated_r20_seed42 (P2): the best overall point estimate
+    (test AUROC 0.910, test F1 0.712), but the advantage over centralized
+    training is not statistically significant (seed-42 p = 0.055, multi-seed
+    Δ = −0.0005) and it is a P2 supplementary experiment, not a primary model.
 """
 
 import json
@@ -60,12 +92,62 @@ MODELS = {
         "history": "results/metrics/multiscale_history.json",
         "primary": False,
     },
+    # ------------------------------------------------------------------
+    # Fine-tuning experiments (validation metrics only — no test
+    # evaluation performed).  Included for transparency, NOT selectable
+    # as a deployment checkpoint.
+    # ------------------------------------------------------------------
+    "finetuned_v1": {
+        "label": "Multi-Scale Residual CNN (fine-tuned V1, lr=1e-4, from multiscale)",
+        "arch": "multiscale",
+        "checkpoint": "results/fine_tuning_v1/checkpoints/finetuned_best.pt",
+        "evaluation": None,
+        "history": "results/fine_tuning_v1/metrics/finetuning_history.json",
+        "primary": False,
+        "note": (
+            "Fine-tuned from the multiscale scheduler-experiment checkpoint with "
+            "lr=1e-4 for 6 epochs (best epoch 1, val AUROC 0.9125).  No test-fold "
+            "evaluation was performed; validation loss diverged while AUROC rose, "
+            "suggesting overfitting.  Not suitable as a deployment checkpoint."
+        ),
+    },
+    "finetuned_v2": {
+        "label": "Multi-Scale Residual CNN (fine-tuned V2, lr=1e-5, from multiscale)",
+        "arch": "multiscale",
+        "checkpoint": "results/fine_tuning_v2/checkpoints/finetuned_best.pt",
+        "evaluation": None,
+        "history": "results/fine_tuning_v2/metrics/finetuning_history.json",
+        "primary": False,
+        "note": (
+            "Fine-tuned from the multiscale scheduler-experiment checkpoint with "
+            "lr=1e-5 for 9 epochs (best epoch 6, val AUROC 0.9145).  No test-fold "
+            "evaluation was performed.  Not suitable as a deployment checkpoint."
+        ),
+    },
+    # ------------------------------------------------------------------
+    # P2 supplementary experiment models.  These have full test
+    # evaluations but are not part of the original primary comparison.
+    # ------------------------------------------------------------------
+    "federated_r20_seed42": {
+        "label": "Multi-Scale Residual CNN (FedAvg, 20 rounds, seed 42)",
+        "arch": "multiscale",
+        "checkpoint": "results/p2/federated/r20_seed42/checkpoints/federated_20round_best.pt",
+        "evaluation": "results/p2/federated/r20_seed42/evaluation/evaluation.json",
+        "history": "results/p2/federated/r20_seed42/metrics/federated_20round_history.json",
+        "primary": False,
+        "note": (
+            "P2 experiment — fully converged FedAvg (best round 14 of 20, seed 42).  "
+            "Test AUROC 0.910, test F1 0.712.  Difference from centralized training is "
+            "not statistically significant (Holm p = 0.055)."
+        ),
+    },
 }
 
 PRIMARY = [k for k, v in MODELS.items() if v["primary"]]
 
 # Model used by the demo app, prediction script and post-hoc analyses that
-# need a single centralized model.
+# need a single centralized model.  See the module docstring for the full
+# selection rationale.
 DEFAULT_CENTRALIZED = "multiscale"
 DEFAULT_FEDERATED = "federated_r8"
 
@@ -90,7 +172,14 @@ def load_model(name, device="cpu", root="."):
 
 
 def load_evaluation(name, root="."):
-    with open(os.path.join(root, MODELS[name]["evaluation"])) as f:
+    entry = MODELS[name]
+    if entry.get("evaluation") is None:
+        raise ValueError(
+            f"Model '{name}' has no test evaluation file.  "
+            f"Only models with stored test-fold evaluations can be loaded.  "
+            f"Note: {entry.get('note', '')}"
+        )
+    with open(os.path.join(root, entry["evaluation"])) as f:
         evaluation = json.load(f)
     test = evaluation.get("test_metrics", evaluation.get("metrics"))
     return evaluation, test

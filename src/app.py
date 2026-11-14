@@ -117,6 +117,21 @@ def load_thresholds():
     )
 
 
+@st.cache_data
+def load_test_evaluation():
+    """Load the stored fold-10 test metrics for the selected model.
+
+    Returns the ``test_metrics`` dict from the evaluation JSON.  These are
+    *historical* evaluation results, not computed from the current upload.
+    """
+    with open(EVALUATION_PATH, "r") as file:
+        evaluation = json.load(file)
+
+    # Evaluation JSONs may store test metrics under "test_metrics" (newer
+    # format) or "metrics" (older federated format).
+    return evaluation.get("test_metrics", evaluation.get("metrics", {}))
+
+
 # --------------------------------------------------
 # CSV INPUT
 # --------------------------------------------------
@@ -1131,46 +1146,53 @@ if uploaded_file is not None:
                     + "**). Because CardioFed defines NORM as mutually exclusive with abnormal conditions in its label policy, "
                     "NORM was suppressed (forced to 0) in the final prediction.\n\n"
                     "- **Effect on this record:** NORM was flipped from Positive (1) to Negative (0).\n"
-                    "- **Fold-10 Test Benchmark Impact:** Resolves all 72 contradictory predictions in the test fold, "
-                    "improving **Subset Accuracy from 57.63% to 58.69%** (+23 exact matches) while slightly lowering **Macro-F1 from 0.7045 to 0.7031** "
-                    "(due to suppressing NORM on records with a false-positive abnormal prediction)."
+                    "- The NORM consistency rule is a post-hoc correction applied to all "
+                    "predictions. Its impact on the fold-10 test set is documented in "
+                    "RESULTS.md §8 and the expander below."
                 )
 
-            with st.expander("ℹ️ Model Benchmark Performance: Raw Thresholds vs. NORM Consistency Rule"):
-                benchmark_df = pd.DataFrame({
-                    "Evaluation Metric": [
+            with st.expander("ℹ️ Historical Fold-10 Test Evaluation (stored results, not live predictions)"):
+                eval_metrics = load_test_evaluation()
+                st.caption(
+                    "The metrics below are **historical evaluation results** loaded from "
+                    f"`{MODELS[DEFAULT_CENTRALIZED]['evaluation']}`, "
+                    "not computed live on the current upload. They summarise the "
+                    "selected model's performance on the fold-10 test set (2,157 "
+                    "records, 1,876 patients). See RESULTS.md for the full comparison "
+                    "across all models and confidence intervals."
+                )
+                eval_summary_df = pd.DataFrame({
+                    "Metric": [
                         "Macro-AUROC",
                         "Macro-F1",
                         "Subset Accuracy",
                         "Hamming Loss",
-                        "Conflicting Predictions (NORM + Abnormal)"
                     ],
-                    "Raw Thresholds": [
-                        "0.9061",
-                        "0.7045",
-                        "57.63% (1,243 / 2,157)",
-                        "0.1366",
-                        "72 records"
+                    "Fold-10 Test Value": [
+                        f"{eval_metrics['macro_auroc']:.4f}",
+                        f"{eval_metrics['macro_f1']:.4f}",
+                        f"{eval_metrics['subset_accuracy']:.2%}",
+                        f"{eval_metrics['hamming_loss']:.4f}",
                     ],
-                    "With NORM Consistency Rule": [
-                        "0.9061",
-                        "0.7031",
-                        "58.69% (1,266 / 2,157)",
-                        "0.1368",
-                        "0 records (resolved)"
-                    ],
-                    "Effect of Rule": [
-                        "Unchanged (probabilities unchanged)",
-                        "-0.0014 (penalizes NORM recall when abnormal is FP)",
-                        "+1.06% (+23 newly exact matches)",
-                        "+0.0002 (slight increase)",
-                        "Enforces clinical mutually-exclusive NORM policy"
-                    ]
                 })
-                st.dataframe(benchmark_df, use_container_width=True, hide_index=True)
+                st.dataframe(eval_summary_df, use_container_width=True, hide_index=True)
+
+                per_class_auroc = eval_metrics.get("per_class_auroc", {})
+                per_class_f1 = eval_metrics.get("per_class_f1", {})
+                if per_class_auroc and per_class_f1:
+                    per_class_df = pd.DataFrame({
+                        "Class": CLASSES,
+                        "Test AUROC": [f"{per_class_auroc.get(c, 0):.4f}" for c in CLASSES],
+                        "Test F1": [f"{per_class_f1.get(c, 0):.4f}" for c in CLASSES],
+                    })
+                    st.dataframe(per_class_df, use_container_width=True, hide_index=True)
+
                 st.caption(
-                    "Metrics evaluated on the complete fold-10 test set (2,157 records, 1,876 patients) "
-                    "using the primary Multi-Scale Residual CNN (results/scheduler_experiment/checkpoints/multiscale_best.pt)."
+                    f"Checkpoint: `{MODELS[DEFAULT_CENTRALIZED]['checkpoint']}`. "
+                    "HYP is the weakest class for all evaluated models. "
+                    "No model statistically outperforms another on the primary "
+                    "metrics (see RESULTS.md §3). These stored results do not "
+                    "change when a new ECG is uploaded."
                 )
 
             st.caption(
@@ -1185,7 +1207,8 @@ if uploaded_file is not None:
             # --------------------------------------------------
 
             report = {
-                "model": "Multi-Scale Residual CNN",
+                "model": MODELS[DEFAULT_CENTRALIZED]["label"],
+                "model_key": DEFAULT_CENTRALIZED,
                 "checkpoint": str(CHECKPOINT_PATH.relative_to(ROOT)),
                 "input_type": input_mode,
                 "classes": CLASSES,
