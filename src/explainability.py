@@ -121,17 +121,6 @@ def main():
     attribution = attribution[0].cpu().numpy()
     signal_np = signal[0].cpu().numpy()
 
-    # Aggregate attribution across leads for each time point.
-    temporal_importance = np.mean(
-        np.abs(attribution),
-        axis=0
-    )
-
-    # Normalize for visualization only.
-    temporal_importance /= (
-        temporal_importance.max() + 1e-8
-    )
-
     # Plot ECG signals and attribution.
     fig, axes = plt.subplots(
         2, 1,

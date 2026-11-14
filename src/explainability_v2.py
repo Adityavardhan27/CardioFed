@@ -48,23 +48,37 @@ EXPLAINED_MODELS = ["multiscale", "federated_r8"]
 DELETION_FRACTIONS = [0.01, 0.02, 0.05, 0.10]
 
 
-def integrated_gradients(model, x, target, steps=64, batch=64):
-    """x: [12, 1000] tensor. Returns (attribution [12,1000], completeness error)."""
-    baseline = torch.zeros_like(x)
-    alphas = (torch.arange(steps, dtype=torch.float32) + 0.5) / steps
-    grads = torch.zeros_like(x)
-    for i in range(0, steps, batch):
-        a = alphas[i:i + batch].view(-1, 1, 1)
-        path = (baseline + a * (x - baseline)).requires_grad_(True)
-        logits = model(path)[:, target].sum()
-        grads += torch.autograd.grad(logits, path)[0].sum(0)
-    attribution = (x - baseline) * grads / steps
-    with torch.no_grad():
-        fx = model(x[None])[0, target].item()
-        fb = model(baseline[None])[0, target].item()
-    gap = fx - fb
-    error = abs(attribution.sum().item() - gap) / max(abs(gap), 1e-8)
-    return attribution, error, fx, fb
+def integrated_gradients(model, x, target, steps=64, batch=64, baseline=None):
+    """x: [12, 1000] tensor. Returns (attribution [12,1000], completeness error, fx, fb)."""
+    was_training = model.training
+    model.eval()
+    try:
+        if baseline is None:
+            baseline = torch.zeros_like(x)
+        else:
+            if baseline.shape != x.shape:
+                raise ValueError(
+                    f"baseline shape {tuple(baseline.shape)} must match input shape {tuple(x.shape)}"
+                )
+            if not torch.isfinite(baseline).all():
+                raise ValueError("baseline tensor must contain only finite values (no NaN or Inf)")
+            baseline = baseline.to(device=x.device, dtype=x.dtype)
+        alphas = (torch.arange(steps, dtype=torch.float32, device=x.device) + 0.5) / steps
+        grads = torch.zeros_like(x)
+        for i in range(0, steps, batch):
+            a = alphas[i:i + batch].view(-1, 1, 1)
+            path = (baseline + a * (x - baseline)).requires_grad_(True)
+            logits = model(path)[:, target].sum()
+            grads += torch.autograd.grad(logits, path)[0].sum(0)
+        attribution = (x - baseline) * grads / steps
+        with torch.no_grad():
+            fx = model(x[None])[0, target].item()
+            fb = model(baseline[None])[0, target].item()
+        gap = fx - fb
+        error = abs(attribution.sum().item() - gap) / max(abs(gap), 1e-8)
+        return attribution, error, fx, fb
+    finally:
+        model.train(was_training)
 
 
 def deletion_scores(model, x, attribution, target, rng, n_random=5):
