@@ -1,0 +1,685 @@
+========== REBUILD LABEL SCRIPT LOCATION ==========
+E:\Projects\cardiofed\rebuild_labels.py
+
+========== REBUILD LABEL SCRIPT ==========
+"""Stage 2 of data preparation: apply the CardioFed label policy.
+
+Run after `python -m src.prepare_data`. Every reported CardioFed result uses
+labels produced by this script (verified: data/processed/y.npy is reproduced
+exactly).
+
+Label policy (differs from the standard PTB-XL superclass benchmark):
+  1. Only SCP diagnostic statements with likelihood > 0 are used.
+  2. NORM is exclusive: if any abnormal superclass (MI, STTC, CD, HYP) is
+     present, NORM is removed for that record.
+  3. Records left without any label are removed (signals and metadata are
+     filtered consistently).
+
+Usage (recommended, non-destructive):
+    python -m src.prepare_data --root data/raw/ptb-xl --out data/stage1
+    python rebuild_labels.py --processed data/stage1 --out data/processed
+
+By default the result is written to a separate --out directory. Rewriting the
+input directory in place (the original behaviour, which replaces X.npy)
+requires the explicit --in-place flag. Existing files in --out are never
+overwritten unless --overwrite is given.
+"""
+
+import argparse
+import ast
+import os
+
+import numpy as np
+import pandas as pd
+
+from src.preprocessing import CLASSES
+from src.io_utils import guard_outputs
+
+OUTPUT_FILES = [
+    "X.npy", "y.npy", "folds.npy", "sites.npy", "ecg_ids.npy",
+    "processed_metadata.csv",
+]
+
+
+def build_labels(df, scp, ecg_ids):
+    """Return (y, df_aligned) using the CardioFed label policy."""
+
+    diagnostic = scp[
+        (pd.to_numeric(scp["diagnostic"], errors="coerce") == 1)
+        & scp["diagnostic_class"].isin(CLASSES)
+    ]
+
+    mapping = diagnostic["diagnostic_class"].to_dict()
+
+    # Preserve the exact original signal order.
+    df = df.loc[ecg_ids]
+
+    y = np.zeros((len(df), len(CLASSES)), dtype=np.float32)
+    class_index = {name: i for i, name in enumerate(CLASSES)}
+
+    for i, codes in enumerate(df["scp_codes"]):
+
+        labels = {
+            mapping[code]
+            for code, likelihood in codes.items()
+            if code in mapping and likelihood > 0
+        }
+
+        # NORM is exclusive: abnormal diagnoses take precedence.
+        abnormal = labels - {"NORM"}
+
+        if abnormal:
+            labels = abnormal
+
+        for label in labels:
+            y[i, class_index[label]] = 1.0
+
+    return y, df
+
+
+def main(root, processed, out, in_place=False, overwrite=False):
+
+    processed = os.path.normpath(processed)
+    out = os.path.normpath(out if out is not None else processed)
+    same_dir = os.path.abspath(out) == os.path.abspath(processed)
+
+    if same_dir and not in_place:
+        raise SystemExit(
+            "Refusing to rewrite the input directory in place. Pass a "
+            "different --out directory (recommended) or --in-place."
+        )
+
+    if not same_dir:
+        guard_outputs(
+            [os.path.join(out, f) for f in OUTPUT_FILES],
+            overwrite=overwrite,
+        )
+
+    print("Loading metadata...")
+
+    df = pd.read_csv(
+        os.path.join(root, "ptbxl_database.csv"),
+        index_col="ecg_id"
+    )
+
+    scp = pd.read_csv(
+        os.path.join(root, "scp_statements.csv"),
+        index_col=0
+    )
+
+    df["scp_codes"] = df["scp_codes"].apply(ast.literal_eval)
+
+    ecg_ids = np.load(os.path.join(processed, "ecg_ids.npy"))
+
+    y, df = build_labels(df, scp, ecg_ids)
+
+    print("Aligned records:", len(df))
+
+    # Remove records with no usable target.
+    keep = y.sum(axis=1) > 0
+    removed = int((~keep).sum())
+
+    print("Records without usable labels:", removed)
+
+    if removed == len(df):
+        raise ValueError("No usable records remain.")
+
+    # Open original signals without loading everything into RAM.
+    X = np.load(os.path.join(processed, "X.npy"), mmap_mode="r")
+
+    if X.shape[0] != len(df):
+        raise ValueError("Signal and metadata alignment error.")
+
+    new_n = int(keep.sum())
+    final_x_path = os.path.join(out, "X.npy")
+    write_path = (
+        os.path.join(out, "X_clean.npy") if same_dir else final_x_path
+    )
+
+    print("\nCreating cleaned signal array...")
+
+    X_clean = np.lib.format.open_memmap(
+        write_path,
+        mode="w+",
+        dtype=np.float32,
+        shape=(new_n, *X.shape[1:])
+    )
+
+    # Copy only valid records in small chunks.
+    write_pos = 0
+    chunk_size = 256
+
+    for start in range(0, len(df), chunk_size):
+        end = min(start + chunk_size, len(df))
+        local_keep = keep[start:end]
+
+        count = int(local_keep.sum())
+
+        if count:
+            X_clean[write_pos:write_pos + count] = X[start:end][local_keep]
+            write_pos += count
+
+        if write_pos and write_pos % 2000 < chunk_size:
+            print(f"Copied {write_pos}/{new_n} signals")
+
+    X_clean.flush()
+    del X_clean
+    del X
+
+    if same_dir:
+        # Original in-place behaviour: replace the old array.
+        os.replace(write_path, final_x_path)
+
+    # Keep labels and all metadata aligned.
+    y = y[keep]
+    df = df.iloc[np.flatnonzero(keep)].copy()
+    ecg_ids = ecg_ids[keep]
+
+    np.save(os.path.join(out, "y.npy"), y)
+
+    np.save(
+        os.path.join(out, "folds.npy"),
+        df["strat_fold"].to_numpy(dtype=np.int64)
+    )
+
+    sites = (
+        df["site"].astype("string").fillna("").astype(str).to_numpy()
+        if "site" in df.columns
+        else np.full(len(df), "", dtype=str)
+    )
+
+    np.save(os.path.join(out, "sites.npy"), sites)
+    np.save(os.path.join(out, "ecg_ids.npy"), ecg_ids)
+
+    df[["filename_lr", "strat_fold"]].to_csv(
+        os.path.join(out, "processed_metadata.csv"),
+        index=True
+    )
+
+    # Final validation.
+    X_check = np.load(final_x_path, mmap_mode="r")
+
+    y_check = np.load(os.path.join(out, "y.npy"))
+    folds = np.load(os.path.join(out, "folds.npy"))
+    ids = np.load(os.path.join(out, "ecg_ids.npy"))
+
+    assert X_check.shape[0] == len(y_check)
+    assert len(y_check) == len(folds) == len(ids)
+    assert X_check.shape[1:] == (1000, 12)
+    assert y_check.shape[1] == 5
+    assert np.all(y_check.sum(axis=1) > 0)
+
+    print("\nFINAL CLASS COUNTS:")
+
+    for name, count in zip(CLASSES, y_check.sum(axis=0)):
+        print(f"{name}: {int(count)}")
+
+    print("\nRemoved records:", removed)
+    print("Final signal shape:", X_check.shape)
+    print("Final label shape:", y_check.shape)
+    print("Final fold counts:")
+    print(pd.Series(folds).value_counts().sort_index())
+
+    print("\nDATASET LABELS AND ALIGNMENT VERIFIED!")
+
+
+if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("--root", default="data/raw/ptb-xl")
+    parser.add_argument(
+        "--processed", required=True,
+        help="Directory produced by src.prepare_data (input)."
+    )
+    parser.add_argument(
+        "--out", default=None,
+        help="Output directory (must differ from --processed unless --in-place)."
+    )
+    parser.add_argument("--in-place", action="store_true")
+    parser.add_argument("--overwrite", action="store_true")
+
+    args = parser.parse_args()
+
+    main(args.root, args.processed, args.out, args.in_place, args.overwrite)
+
+========== APP INFERENCE REFERENCES ==========
+  E:\Projects\cardiofed\src\app.py:1:
+> E:\Projects\cardiofed\src\app.py:2:"""CardioFed: ECG classification, image digitization and visualization."""
+  E:\Projects\cardiofed\src\app.py:3:
+  E:\Projects\cardiofed\src\app.py:4:import json
+  E:\Projects\cardiofed\src\app.py:5:import sys
+  E:\Projects\cardiofed\src\app.py:6:from pathlib import Path
+  E:\Projects\cardiofed\src\app.py:7:
+  E:\Projects\cardiofed\src\app.py:8:import cv2
+  E:\Projects\cardiofed\src\app.py:9:import numpy as np
+  E:\Projects\cardiofed\src\app.py:10:import pandas as pd
+  E:\Projects\cardiofed\src\app.py:11:import streamlit as st
+  E:\Projects\cardiofed\src\app.py:12:import torch
+  E:\Projects\cardiofed\src\app.py:13:import matplotlib.pyplot as plt
+> E:\Projects\cardiofed\src\app.py:14:from matplotlib.colors import TwoSlopeNorm
+  E:\Projects\cardiofed\src\app.py:15:
+  E:\Projects\cardiofed\src\app.py:16:ROOT = Path(__file__).resolve().parent.parent
+  E:\Projects\cardiofed\src\app.py:17:sys.path.insert(0, str(ROOT))
+  E:\Projects\cardiofed\src\app.py:18:
+  E:\Projects\cardiofed\src\app.py:19:from src.model import MultiScaleResidualECGNet
+  E:\Projects\cardiofed\src\app.py:20:from src.preprocessing import CLASSES
+  E:\Projects\cardiofed\src\app.py:21:from src.model_registry import MODELS, DEFAULT_CENTRALIZED
+  E:\Projects\cardiofed\src\app.py:22:from src.explainability_v2 import integrated_gradients as ig_v2_core
+  E:\Projects\cardiofed\src\app.py:23:
+  E:\Projects\cardiofed\src\app.py:24:
+  E:\Projects\cardiofed\src\app.py:97:    checkpoint = torch.load(
+  E:\Projects\cardiofed\src\app.py:98:        CHECKPOINT_PATH,
+  E:\Projects\cardiofed\src\app.py:99:        map_location=DEVICE
+  E:\Projects\cardiofed\src\app.py:100:    )
+  E:\Projects\cardiofed\src\app.py:101:
+> E:\Projects\cardiofed\src\app.py:102:    model.load_state_dict(checkpoint["model_state_dict"])
+  E:\Projects\cardiofed\src\app.py:103:    model.eval()
+  E:\Projects\cardiofed\src\app.py:104:
+  E:\Projects\cardiofed\src\app.py:105:    return model
+  E:\Projects\cardiofed\src\app.py:106:
+  E:\Projects\cardiofed\src\app.py:107:
+  E:\Projects\cardiofed\src\app.py:108:@st.cache_data
+  E:\Projects\cardiofed\src\app.py:109:def load_thresholds():
+  E:\Projects\cardiofed\src\app.py:110:
+  E:\Projects\cardiofed\src\app.py:111:    with open(EVALUATION_PATH, "r") as file:
+  E:\Projects\cardiofed\src\app.py:112:        evaluation = json.load(file)
+  E:\Projects\cardiofed\src\app.py:148:    if not np.isfinite(signal_array).all():
+  E:\Projects\cardiofed\src\app.py:149:        raise ValueError(
+  E:\Projects\cardiofed\src\app.py:150:            "The ECG contains missing or invalid signal values."
+  E:\Projects\cardiofed\src\app.py:151:        )
+  E:\Projects\cardiofed\src\app.py:152:
+> E:\Projects\cardiofed\src\app.py:153:    # CSV must already be filtered and normalized.
+  E:\Projects\cardiofed\src\app.py:154:    signal = torch.from_numpy(
+  E:\Projects\cardiofed\src\app.py:155:        signal_array.T.copy()
+  E:\Projects\cardiofed\src\app.py:156:    ).unsqueeze(0)
+  E:\Projects\cardiofed\src\app.py:157:
+  E:\Projects\cardiofed\src\app.py:158:    return signal, df[LEADS].copy()
+  E:\Projects\cardiofed\src\app.py:159:
+  E:\Projects\cardiofed\src\app.py:160:
+  E:\Projects\cardiofed\src\app.py:161:# --------------------------------------------------
+> E:\Projects\cardiofed\src\app.py:162:# IMAGE DIGITIZATION
+  E:\Projects\cardiofed\src\app.py:163:# --------------------------------------------------
+  E:\Projects\cardiofed\src\app.py:164:
+  E:\Projects\cardiofed\src\app.py:165:def create_waveform_mask(roi):
+  E:\Projects\cardiofed\src\app.py:166:    """Detect dark red waveform pixels using HSV."""
+  E:\Projects\cardiofed\src\app.py:167:
+  E:\Projects\cardiofed\src\app.py:168:    hsv = cv2.cvtColor(
+  E:\Projects\cardiofed\src\app.py:169:        roi,
+  E:\Projects\cardiofed\src\app.py:170:        cv2.COLOR_BGR2HSV
+  E:\Projects\cardiofed\src\app.py:171:    )
+  E:\Projects\cardiofed\src\app.py:172:
+  E:\Projects\cardiofed\src\app.py:189:    )
+  E:\Projects\cardiofed\src\app.py:190:
+  E:\Projects\cardiofed\src\app.py:191:    return cv2.bitwise_or(mask_1, mask_2)
+  E:\Projects\cardiofed\src\app.py:192:
+  E:\Projects\cardiofed\src\app.py:193:
+> E:\Projects\cardiofed\src\app.py:194:def digitize_ecg_image(image):
+  E:\Projects\cardiofed\src\app.py:195:    """
+  E:\Projects\cardiofed\src\app.py:196:    Reconstruct 12 ECG leads from the CardioFed synthetic
+  E:\Projects\cardiofed\src\app.py:197:    12-row image layout.
+  E:\Projects\cardiofed\src\app.py:198:
+  E:\Projects\cardiofed\src\app.py:199:    Returns:
+  E:\Projects\cardiofed\src\app.py:200:        reconstructed_df
+  E:\Projects\cardiofed\src\app.py:201:        debug_image
+  E:\Projects\cardiofed\src\app.py:202:    """
+  E:\Projects\cardiofed\src\app.py:203:
+  E:\Projects\cardiofed\src\app.py:204:    height, width = image.shape[:2]
+  E:\Projects\cardiofed\src\app.py:283:            median_positions
+  E:\Projects\cardiofed\src\app.py:284:        )
+  E:\Projects\cardiofed\src\app.py:285:
+  E:\Projects\cardiofed\src\app.py:286:        absolute_y = pixel_positions + y_start
+  E:\Projects\cardiofed\src\app.py:287:
+> E:\Projects\cardiofed\src\app.py:288:        # Convert pixel coordinates into normalized values.
+  E:\Projects\cardiofed\src\app.py:289:        signal_values = (
+  E:\Projects\cardiofed\src\app.py:290:            center_y - absolute_y
+  E:\Projects\cardiofed\src\app.py:291:        ) / IMAGE_VERTICAL_SCALE
+  E:\Projects\cardiofed\src\app.py:292:
+  E:\Projects\cardiofed\src\app.py:293:        # V5: Sample at exact ECG source sample positions.
+  E:\Projects\cardiofed\src\app.py:294:        sample_positions = (
+  E:\Projects\cardiofed\src\app.py:295:            np.arange(IMAGE_SAMPLE_COUNT)
+  E:\Projects\cardiofed\src\app.py:296:            * IMAGE_PAPER_SPEED
+  E:\Projects\cardiofed\src\app.py:297:            * IMAGE_PIXELS_PER_MM
+  E:\Projects\cardiofed\src\app.py:298:            / 100
+  E:\Projects\cardiofed\src\app.py:321:            (0, 180, 0),
+  E:\Projects\cardiofed\src\app.py:322:            2
+  E:\Projects\cardiofed\src\app.py:323:        )
+  E:\Projects\cardiofed\src\app.py:324:
+  E:\Projects\cardiofed\src\app.py:325:        print(
+> E:\Projects\cardiofed\src\app.py:326:            f"Image digitization - {DISPLAY_LEADS[i]}: "
+  E:\Projects\cardiofed\src\app.py:327:            f"{len(reconstructed_signal)} samples"
+  E:\Projects\cardiofed\src\app.py:328:        )
+  E:\Projects\cardiofed\src\app.py:329:
+  E:\Projects\cardiofed\src\app.py:330:    reconstructed_df = pd.DataFrame(reconstructed)
+  E:\Projects\cardiofed\src\app.py:331:
+  E:\Projects\cardiofed\src\app.py:332:    return reconstructed_df, debug_image
+  E:\Projects\cardiofed\src\app.py:333:
+  E:\Projects\cardiofed\src\app.py:334:
+  E:\Projects\cardiofed\src\app.py:335:def prepare_ecg_image(uploaded_file):
+  E:\Projects\cardiofed\src\app.py:336:
+  E:\Projects\cardiofed\src\app.py:345:    )
+  E:\Projects\cardiofed\src\app.py:346:
+  E:\Projects\cardiofed\src\app.py:347:    if image is None:
+  E:\Projects\cardiofed\src\app.py:348:        raise ValueError("Unable to read the uploaded image.")
+  E:\Projects\cardiofed\src\app.py:349:
+> E:\Projects\cardiofed\src\app.py:350:    reconstructed_df, debug_image = digitize_ecg_image(image)
+  E:\Projects\cardiofed\src\app.py:351:
+  E:\Projects\cardiofed\src\app.py:352:    signal_array = reconstructed_df[LEADS].to_numpy(
+  E:\Projects\cardiofed\src\app.py:353:        dtype=np.float32
+  E:\Projects\cardiofed\src\app.py:354:    )
+  E:\Projects\cardiofed\src\app.py:355:
+  E:\Projects\cardiofed\src\app.py:356:    if not np.isfinite(signal_array).all():
+  E:\Projects\cardiofed\src\app.py:357:        raise ValueError(
+> E:\Projects\cardiofed\src\app.py:358:            "Digitization generated invalid signal values."
+  E:\Projects\cardiofed\src\app.py:359:        )
+  E:\Projects\cardiofed\src\app.py:360:
+  E:\Projects\cardiofed\src\app.py:361:    signal = torch.from_numpy(
+  E:\Projects\cardiofed\src\app.py:362:        signal_array.T.copy()
+  E:\Projects\cardiofed\src\app.py:363:    ).unsqueeze(0)
+  E:\Projects\cardiofed\src\app.py:364:
+  E:\Projects\cardiofed\src\app.py:365:    return signal, reconstructed_df, image, debug_image
+  E:\Projects\cardiofed\src\app.py:366:
+  E:\Projects\cardiofed\src\app.py:367:
+  E:\Projects\cardiofed\src\app.py:368:# --------------------------------------------------
+> E:\Projects\cardiofed\src\app.py:369:# PREDICTION
+  E:\Projects\cardiofed\src\app.py:370:# --------------------------------------------------
+  E:\Projects\cardiofed\src\app.py:371:
+  E:\Projects\cardiofed\src\app.py:372:def flat_lead_names(signal, min_std=1e-3):
+  E:\Projects\cardiofed\src\app.py:373:    """Return names of leads whose standard deviation is ~0 (flat/missing)."""
+  E:\Projects\cardiofed\src\app.py:374:
+  E:\Projects\cardiofed\src\app.py:375:    stds = signal[0].std(dim=1).cpu().numpy()
+  E:\Projects\cardiofed\src\app.py:376:
+  E:\Projects\cardiofed\src\app.py:377:    return [
+  E:\Projects\cardiofed\src\app.py:378:        LEADS[i] for i, value in enumerate(stds)
+  E:\Projects\cardiofed\src\app.py:379:        if value < min_std
+  E:\Projects\cardiofed\src\app.py:380:    ]
+  E:\Projects\cardiofed\src\app.py:381:
+  E:\Projects\cardiofed\src\app.py:382:
+> E:\Projects\cardiofed\src\app.py:383:def predict_ecg(signal, model, thresholds):
+  E:\Projects\cardiofed\src\app.py:384:
+  E:\Projects\cardiofed\src\app.py:385:    signal = signal.to(DEVICE)
+  E:\Projects\cardiofed\src\app.py:386:
+  E:\Projects\cardiofed\src\app.py:387:    with torch.no_grad():
+  E:\Projects\cardiofed\src\app.py:388:
+  E:\Projects\cardiofed\src\app.py:389:        logits = model(signal)
+  E:\Projects\cardiofed\src\app.py:390:
+  E:\Projects\cardiofed\src\app.py:391:        probabilities = torch.sigmoid(
+  E:\Projects\cardiofed\src\app.py:392:            logits
+  E:\Projects\cardiofed\src\app.py:393:        ).cpu().numpy()[0]
+  E:\Projects\cardiofed\src\app.py:394:
+> E:\Projects\cardiofed\src\app.py:395:    original_predictions = (
+  E:\Projects\cardiofed\src\app.py:396:        probabilities >= thresholds
+  E:\Projects\cardiofed\src\app.py:397:    ).astype(int)
+  E:\Projects\cardiofed\src\app.py:398:
+> E:\Projects\cardiofed\src\app.py:399:    # Project-specific NORM consistency rule.
+> E:\Projects\cardiofed\src\app.py:400:    final_predictions = original_predictions.copy()
+  E:\Projects\cardiofed\src\app.py:401:
+> E:\Projects\cardiofed\src\app.py:402:    abnormal_indices = [
+  E:\Projects\cardiofed\src\app.py:403:        CLASSES.index(name)
+  E:\Projects\cardiofed\src\app.py:404:        for name in ["MI", "STTC", "CD", "HYP"]
+  E:\Projects\cardiofed\src\app.py:405:    ]
+  E:\Projects\cardiofed\src\app.py:406:
+> E:\Projects\cardiofed\src\app.py:407:    if final_predictions[abnormal_indices].any():
+> E:\Projects\cardiofed\src\app.py:408:        final_predictions[0] = 0
+  E:\Projects\cardiofed\src\app.py:409:
+  E:\Projects\cardiofed\src\app.py:410:    return (
+  E:\Projects\cardiofed\src\app.py:411:        probabilities,
+> E:\Projects\cardiofed\src\app.py:412:        original_predictions,
+> E:\Projects\cardiofed\src\app.py:413:        final_predictions
+  E:\Projects\cardiofed\src\app.py:414:    )
+  E:\Projects\cardiofed\src\app.py:415:
+  E:\Projects\cardiofed\src\app.py:416:
+  E:\Projects\cardiofed\src\app.py:417:# --------------------------------------------------
+  E:\Projects\cardiofed\src\app.py:418:# INTEGRATED GRADIENTS
+  E:\Projects\cardiofed\src\app.py:419:# --------------------------------------------------
+  E:\Projects\cardiofed\src\app.py:420:
+  E:\Projects\cardiofed\src\app.py:421:def integrated_gradients(
+  E:\Projects\cardiofed\src\app.py:422:    model,
+  E:\Projects\cardiofed\src\app.py:423:    signal,
+  E:\Projects\cardiofed\src\app.py:493:    lim = float(np.percentile(np.abs(attribution_np), 99.5)) or 1.0
+  E:\Projects\cardiofed\src\app.py:494:    im = axes[1].imshow(
+  E:\Projects\cardiofed\src\app.py:495:        attribution_np,
+  E:\Projects\cardiofed\src\app.py:496:        aspect="auto",
+  E:\Projects\cardiofed\src\app.py:497:        cmap="seismic",
+> E:\Projects\cardiofed\src\app.py:498:        norm=TwoSlopeNorm(vmin=-lim, vcenter=0.0, vmax=lim),
+  E:\Projects\cardiofed\src\app.py:499:        interpolation="nearest",
+  E:\Projects\cardiofed\src\app.py:500:        extent=[0, 10, 11.5, -0.5]
+  E:\Projects\cardiofed\src\app.py:501:    )
+  E:\Projects\cardiofed\src\app.py:502:
+  E:\Projects\cardiofed\src\app.py:503:    if completeness_error is not None:
+  E:\Projects\cardiofed\src\app.py:504:        axes[1].set_title(
+  E:\Projects\cardiofed\src\app.py:505:            f"Integrated Gradients Attribution for {target_name} "
+  E:\Projects\cardiofed\src\app.py:506:            f"(64-step midpoint, completeness error: {completeness_error:.1%})",
+  E:\Projects\cardiofed\src\app.py:507:            fontsize=12
+  E:\Projects\cardiofed\src\app.py:508:        )
+  E:\Projects\cardiofed\src\app.py:602:
+  E:\Projects\cardiofed\src\app.py:603:if input_mode == "CSV File":
+  E:\Projects\cardiofed\src\app.py:604:
+  E:\Projects\cardiofed\src\app.py:605:    st.info(
+  E:\Projects\cardiofed\src\app.py:606:        "Upload a CSV containing 1,000 samples and all 12 leads. "
+> E:\Projects\cardiofed\src\app.py:607:        "The signals must already be filtered and normalized "
+  E:\Projects\cardiofed\src\app.py:608:        "using the CardioFed preprocessing pipeline."
+  E:\Projects\cardiofed\src\app.py:609:    )
+  E:\Projects\cardiofed\src\app.py:610:
+  E:\Projects\cardiofed\src\app.py:611:    uploaded_file = st.file_uploader(
+  E:\Projects\cardiofed\src\app.py:612:        "Upload ECG CSV",
+  E:\Projects\cardiofed\src\app.py:613:        type=["csv"],
+  E:\Projects\cardiofed\src\app.py:614:        key="csv_uploader"
+  E:\Projects\cardiofed\src\app.py:615:    )
+  E:\Projects\cardiofed\src\app.py:616:
+  E:\Projects\cardiofed\src\app.py:617:else:
+  E:\Projects\cardiofed\src\app.py:653:            signal, ecg_df, original_image, debug_image = (
+  E:\Projects\cardiofed\src\app.py:654:                prepare_ecg_image(uploaded_file)
+  E:\Projects\cardiofed\src\app.py:655:            )
+  E:\Projects\cardiofed\src\app.py:656:
+  E:\Projects\cardiofed\src\app.py:657:            st.success(
+> E:\Projects\cardiofed\src\app.py:658:                "ECG image digitized successfully!"
+  E:\Projects\cardiofed\src\app.py:659:            )
+  E:\Projects\cardiofed\src\app.py:660:
+  E:\Projects\cardiofed\src\app.py:661:            st.markdown("### Uploaded ECG Image")
+  E:\Projects\cardiofed\src\app.py:662:
+  E:\Projects\cardiofed\src\app.py:663:            st.image(
+  E:\Projects\cardiofed\src\app.py:664:                original_image,
+  E:\Projects\cardiofed\src\app.py:665:                channels="BGR",
+  E:\Projects\cardiofed\src\app.py:666:                use_container_width=True
+  E:\Projects\cardiofed\src\app.py:667:            )
+  E:\Projects\cardiofed\src\app.py:668:
+> E:\Projects\cardiofed\src\app.py:669:            st.markdown("### Digitization Result")
+  E:\Projects\cardiofed\src\app.py:670:
+  E:\Projects\cardiofed\src\app.py:671:            st.image(
+  E:\Projects\cardiofed\src\app.py:672:                debug_image,
+  E:\Projects\cardiofed\src\app.py:673:                channels="BGR",
+  E:\Projects\cardiofed\src\app.py:674:                caption=(
+  E:\Projects\cardiofed\src\app.py:675:                    "Green lines show the extracted ECG waveforms."
+  E:\Projects\cardiofed\src\app.py:676:                ),
+  E:\Projects\cardiofed\src\app.py:677:                use_container_width=True
+  E:\Projects\cardiofed\src\app.py:678:            )
+  E:\Projects\cardiofed\src\app.py:679:
+  E:\Projects\cardiofed\src\app.py:725:            with st.spinner("Analyzing ECG..."):
+  E:\Projects\cardiofed\src\app.py:726:
+  E:\Projects\cardiofed\src\app.py:727:                model = load_model()
+  E:\Projects\cardiofed\src\app.py:728:                thresholds = load_thresholds()
+  E:\Projects\cardiofed\src\app.py:729:
+> E:\Projects\cardiofed\src\app.py:730:                probabilities, original, final = predict_ecg(
+  E:\Projects\cardiofed\src\app.py:731:                    signal,
+  E:\Projects\cardiofed\src\app.py:732:                    model,
+  E:\Projects\cardiofed\src\app.py:733:                    thresholds
+  E:\Projects\cardiofed\src\app.py:734:                )
+  E:\Projects\cardiofed\src\app.py:735:
+> E:\Projects\cardiofed\src\app.py:736:            st.markdown("## Prediction Results")
+  E:\Projects\cardiofed\src\app.py:737:
+> E:\Projects\cardiofed\src\app.py:738:            # Input quality check: the models output confident abnormal
+> E:\Projects\cardiofed\src\app.py:739:            # predictions (e.g. STTC/HYP) for flat-line input, so flat or
+> E:\Projects\cardiofed\src\app.py:740:            # missing leads make the prediction unreliable.
+  E:\Projects\cardiofed\src\app.py:741:            flat_leads = flat_lead_names(signal)
+  E:\Projects\cardiofed\src\app.py:742:
+  E:\Projects\cardiofed\src\app.py:743:            if flat_leads:
+  E:\Projects\cardiofed\src\app.py:744:                st.warning(
+  E:\Projects\cardiofed\src\app.py:745:                    "Flat or missing lead(s) detected: "
+  E:\Projects\cardiofed\src\app.py:746:                    f"{', '.join(flat_leads)}. The models were trained on "
+  E:\Projects\cardiofed\src\app.py:747:                    "complete 12-lead ECGs and are unreliable when leads are "
+  E:\Projects\cardiofed\src\app.py:748:                    "missing; a flat-line input is itself classified as "
+> E:\Projects\cardiofed\src\app.py:749:                    "abnormal. Interpret these predictions with caution."
+  E:\Projects\cardiofed\src\app.py:750:                )
+  E:\Projects\cardiofed\src\app.py:751:
+  E:\Projects\cardiofed\src\app.py:752:            # --------------------------------------------------
+  E:\Projects\cardiofed\src\app.py:753:            # INTEGRATED GRADIENTS
+  E:\Projects\cardiofed\src\app.py:754:            # --------------------------------------------------
+  E:\Projects\cardiofed\src\app.py:755:
+  E:\Projects\cardiofed\src\app.py:756:            if generate_explanation:
+  E:\Projects\cardiofed\src\app.py:757:
+  E:\Projects\cardiofed\src\app.py:758:                st.markdown("## Explainable AI Analysis")
+  E:\Projects\cardiofed\src\app.py:759:
+  E:\Projects\cardiofed\src\app.py:794:                    f"attribution values respectively. This is a model "
+  E:\Projects\cardiofed\src\app.py:795:                    f"explanation, not clinical evidence."
+  E:\Projects\cardiofed\src\app.py:796:                )
+  E:\Projects\cardiofed\src\app.py:797:
+  E:\Projects\cardiofed\src\app.py:798:            # --------------------------------------------------
+> E:\Projects\cardiofed\src\app.py:799:            # PREDICTION TABLE
+  E:\Projects\cardiofed\src\app.py:800:            # --------------------------------------------------
+  E:\Projects\cardiofed\src\app.py:801:
+  E:\Projects\cardiofed\src\app.py:802:            results = pd.DataFrame({
+  E:\Projects\cardiofed\src\app.py:803:                "Class": CLASSES,
+  E:\Projects\cardiofed\src\app.py:804:                "Probability (%)": (probabilities * 100).round(2),
+  E:\Projects\cardiofed\src\app.py:805:                "Threshold (%)": (thresholds * 100).round(2),
+> E:\Projects\cardiofed\src\app.py:806:                "Raw Prediction (Thresholds)": [
+  E:\Projects\cardiofed\src\app.py:807:                    "Positive (1)" if o == 1 else "Negative (0)"
+  E:\Projects\cardiofed\src\app.py:808:                    for o in original
+  E:\Projects\cardiofed\src\app.py:809:                ],
+> E:\Projects\cardiofed\src\app.py:810:                "Final Prediction (NORM Rule)": [
+  E:\Projects\cardiofed\src\app.py:811:                    "Positive (1)" if f == 1 else "Negative (0)"
+  E:\Projects\cardiofed\src\app.py:812:                    for f in final
+  E:\Projects\cardiofed\src\app.py:813:                ],
+  E:\Projects\cardiofed\src\app.py:814:                "Status": [
+> E:\Projects\cardiofed\src\app.py:815:                    "NORM Suppressed" if o == 1 and f == 0 else ("Positive" if f == 1 else "Negative")
+  E:\Projects\cardiofed\src\app.py:816:                    for o, f in zip(original, final)
+  E:\Projects\cardiofed\src\app.py:817:                ]
+  E:\Projects\cardiofed\src\app.py:818:            })
+  E:\Projects\cardiofed\src\app.py:819:
+  E:\Projects\cardiofed\src\app.py:820:            st.dataframe(
+  E:\Projects\cardiofed\src\app.py:821:                results,
+  E:\Projects\cardiofed\src\app.py:822:                use_container_width=True,
+  E:\Projects\cardiofed\src\app.py:823:                hide_index=True
+  E:\Projects\cardiofed\src\app.py:824:            )
+  E:\Projects\cardiofed\src\app.py:825:
+  E:\Projects\cardiofed\src\app.py:838:
+  E:\Projects\cardiofed\src\app.py:839:            # --------------------------------------------------
+  E:\Projects\cardiofed\src\app.py:840:            # CLASSIFICATION SUMMARY
+  E:\Projects\cardiofed\src\app.py:841:            # --------------------------------------------------
+  E:\Projects\cardiofed\src\app.py:842:
+> E:\Projects\cardiofed\src\app.py:843:            raw_predicted_classes = [
+  E:\Projects\cardiofed\src\app.py:844:                CLASSES[i]
+  E:\Projects\cardiofed\src\app.py:845:                for i in range(len(CLASSES))
+  E:\Projects\cardiofed\src\app.py:846:                if original[i] == 1
+  E:\Projects\cardiofed\src\app.py:847:            ]
+  E:\Projects\cardiofed\src\app.py:848:
+> E:\Projects\cardiofed\src\app.py:849:            final_predicted_classes = [
+  E:\Projects\cardiofed\src\app.py:850:                CLASSES[i]
+  E:\Projects\cardiofed\src\app.py:851:                for i in range(len(CLASSES))
+  E:\Projects\cardiofed\src\app.py:852:                if final[i] == 1
+  E:\Projects\cardiofed\src\app.py:853:            ]
+  E:\Projects\cardiofed\src\app.py:854:
+  E:\Projects\cardiofed\src\app.py:855:            st.markdown("### Classification Summary")
+  E:\Projects\cardiofed\src\app.py:856:
+  E:\Projects\cardiofed\src\app.py:857:            col1, col2 = st.columns(2)
+  E:\Projects\cardiofed\src\app.py:858:            with col1:
+> E:\Projects\cardiofed\src\app.py:859:                st.markdown("**1. Raw Threshold Predictions** *(Independent decision thresholds)*")
+> E:\Projects\cardiofed\src\app.py:860:                if raw_predicted_classes:
+> E:\Projects\cardiofed\src\app.py:861:                    st.write(", ".join(raw_predicted_classes))
+  E:\Projects\cardiofed\src\app.py:862:                else:
+  E:\Projects\cardiofed\src\app.py:863:                    st.write("No class crossed its threshold.")
+  E:\Projects\cardiofed\src\app.py:864:
+  E:\Projects\cardiofed\src\app.py:865:            with col2:
+> E:\Projects\cardiofed\src\app.py:866:                st.markdown("**2. Final Predictions** *(After post-hoc NORM consistency rule)*")
+> E:\Projects\cardiofed\src\app.py:867:                if final_predicted_classes:
+> E:\Projects\cardiofed\src\app.py:868:                    st.write(", ".join(final_predicted_classes))
+  E:\Projects\cardiofed\src\app.py:869:                else:
+> E:\Projects\cardiofed\src\app.py:870:                    st.write("No class predicted positive.")
+  E:\Projects\cardiofed\src\app.py:871:
+  E:\Projects\cardiofed\src\app.py:872:            if not np.array_equal(original, final):
+  E:\Projects\cardiofed\src\app.py:873:                st.warning(
+> E:\Projects\cardiofed\src\app.py:874:                    "?? **Post-Hoc NORM Consistency Rule Applied:**\n\n"
+> E:\Projects\cardiofed\src\app.py:875:                    "The model's raw independent thresholds predicted both **NORM** and abnormal class(es) (**"
+  E:\Projects\cardiofed\src\app.py:876:                    + ", ".join([CLASSES[i] for i in range(1, 5) if original[i] == 1])
+> E:\Projects\cardiofed\src\app.py:877:                    + "**). Because CardioFed defines NORM as mutually exclusive with abnormal conditions in its label policy, "
+> E:\Projects\cardiofed\src\app.py:878:                    "NORM was suppressed (forced to 0) in the final prediction.\n\n"
+> E:\Projects\cardiofed\src\app.py:879:                    "- **Effect on this record:** NORM was flipped from Positive (1) to Negative (0).\n"
+> E:\Projects\cardiofed\src\app.py:880:                    "- **Fold-10 Test Benchmark Impact:** Resolves all 72 contradictory predictions in the test fold, "
+  E:\Projects\cardiofed\src\app.py:881:                    "improving **Subset Accuracy from 57.63% to 58.69%** (+23 exact matches) while slightly lowering **Macro-F1 from 0.7045 to 0.7031** "
+> E:\Projects\cardiofed\src\app.py:882:                    "(due to suppressing NORM on records with a false-positive abnormal prediction)."
+  E:\Projects\cardiofed\src\app.py:883:                )
+  E:\Projects\cardiofed\src\app.py:884:
+> E:\Projects\cardiofed\src\app.py:885:            with st.expander("?? Model Benchmark Performance: Raw Thresholds vs. NORM Consistency Rule"):
+  E:\Projects\cardiofed\src\app.py:886:                benchmark_df = pd.DataFrame({
+  E:\Projects\cardiofed\src\app.py:887:                    "Evaluation Metric": [
+  E:\Projects\cardiofed\src\app.py:888:                        "Macro-AUROC",
+  E:\Projects\cardiofed\src\app.py:889:                        "Macro-F1",
+  E:\Projects\cardiofed\src\app.py:890:                        "Subset Accuracy",
+  E:\Projects\cardiofed\src\app.py:891:                        "Hamming Loss",
+> E:\Projects\cardiofed\src\app.py:892:                        "Conflicting Predictions (NORM + Abnormal)"
+  E:\Projects\cardiofed\src\app.py:893:                    ],
+  E:\Projects\cardiofed\src\app.py:894:                    "Raw Thresholds": [
+  E:\Projects\cardiofed\src\app.py:895:                        "0.9061",
+  E:\Projects\cardiofed\src\app.py:896:                        "0.7045",
+  E:\Projects\cardiofed\src\app.py:897:                        "57.63% (1,243 / 2,157)",
+  E:\Projects\cardiofed\src\app.py:898:                        "0.1366",
+  E:\Projects\cardiofed\src\app.py:899:                        "72 records"
+  E:\Projects\cardiofed\src\app.py:900:                    ],
+> E:\Projects\cardiofed\src\app.py:901:                    "With NORM Consistency Rule": [
+  E:\Projects\cardiofed\src\app.py:902:                        "0.9061",
+  E:\Projects\cardiofed\src\app.py:903:                        "0.7031",
+  E:\Projects\cardiofed\src\app.py:904:                        "58.69% (1,266 / 2,157)",
+  E:\Projects\cardiofed\src\app.py:905:                        "0.1368",
+  E:\Projects\cardiofed\src\app.py:906:                        "0 records (resolved)"
+  E:\Projects\cardiofed\src\app.py:907:                    ],
+  E:\Projects\cardiofed\src\app.py:908:                    "Effect of Rule": [
+  E:\Projects\cardiofed\src\app.py:909:                        "Unchanged (probabilities unchanged)",
+> E:\Projects\cardiofed\src\app.py:910:                        "-0.0014 (penalizes NORM recall when abnormal is FP)",
+  E:\Projects\cardiofed\src\app.py:911:                        "+1.06% (+23 newly exact matches)",
+  E:\Projects\cardiofed\src\app.py:912:                        "+0.0002 (slight increase)",
+> E:\Projects\cardiofed\src\app.py:913:                        "Enforces clinical mutually-exclusive NORM policy"
+  E:\Projects\cardiofed\src\app.py:914:                    ]
+  E:\Projects\cardiofed\src\app.py:915:                })
+  E:\Projects\cardiofed\src\app.py:916:                st.dataframe(benchmark_df, use_container_width=True, hide_index=True)
+  E:\Projects\cardiofed\src\app.py:917:                st.caption(
+  E:\Projects\cardiofed\src\app.py:918:                    "Metrics evaluated on the complete fold-10 test set (2,157 records, 1,876 patients) "
+  E:\Projects\cardiofed\src\app.py:919:                    "using the primary Multi-Scale Residual CNN (results/scheduler_experiment/checkpoints/multiscale_best.pt)."
+  E:\Projects\cardiofed\src\app.py:920:                )
+  E:\Projects\cardiofed\src\app.py:921:
+  E:\Projects\cardiofed\src\app.py:922:            st.caption(
+  E:\Projects\cardiofed\src\app.py:923:                "Probabilities are model outputs, not calibrated "
+  E:\Projects\cardiofed\src\app.py:944:                "thresholds": {
+  E:\Projects\cardiofed\src\app.py:945:                    name: float(thresholds[i])
+  E:\Projects\cardiofed\src\app.py:946:                    for i, name in enumerate(CLASSES)
+  E:\Projects\cardiofed\src\app.py:947:                },
+  E:\Projects\cardiofed\src\app.py:948:
+> E:\Projects\cardiofed\src\app.py:949:                "raw_predictions": {
+  E:\Projects\cardiofed\src\app.py:950:                    name: int(original[i])
+  E:\Projects\cardiofed\src\app.py:951:                    for i, name in enumerate(CLASSES)
+  E:\Projects\cardiofed\src\app.py:952:                },
+  E:\Projects\cardiofed\src\app.py:953:
+> E:\Projects\cardiofed\src\app.py:954:                "final_predictions": {
+  E:\Projects\cardiofed\src\app.py:955:                    name: int(final[i])
+  E:\Projects\cardiofed\src\app.py:956:                    for i, name in enumerate(CLASSES)
+  E:\Projects\cardiofed\src\app.py:957:                },
+  E:\Projects\cardiofed\src\app.py:958:
+> E:\Projects\cardiofed\src\app.py:959:                "norm_consistency_rule_applied": bool(not np.array_equal(original, final)),
+> E:\Projects\cardiofed\src\app.py:960:                "rule_description": "Post-hoc rule suppressing NORM when any abnormal class is predicted positive."
+  E:\Projects\cardiofed\src\app.py:961:            }
+  E:\Projects\cardiofed\src\app.py:962:
+  E:\Projects\cardiofed\src\app.py:963:            st.download_button(
+> E:\Projects\cardiofed\src\app.py:964:                "Download Prediction Report (JSON)",
+  E:\Projects\cardiofed\src\app.py:965:                data=json.dumps(report, indent=2),
+> E:\Projects\cardiofed\src\app.py:966:                file_name="cardiofed_prediction.json",
+  E:\Projects\cardiofed\src\app.py:967:                mime="application/json"
+  E:\Projects\cardiofed\src\app.py:968:            )
+  E:\Projects\cardiofed\src\app.py:969:
+  E:\Projects\cardiofed\src\app.py:970:    except Exception as error:
+  E:\Projects\cardiofed\src\app.py:971:
+  E:\Projects\cardiofed\src\app.py:972:        st.error(
+  E:\Projects\cardiofed\src\app.py:973:            f"Unable to process ECG: {error}"
+  E:\Projects\cardiofed\src\app.py:974:        )
+  E:\Projects\cardiofed\src\app.py:975:
+  E:\Projects\cardiofed\src\app.py:976:
