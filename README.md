@@ -103,7 +103,8 @@ This differs from the usual PTB-XL superclass benchmark for 528 records
 Splits use the official `strat_fold`: folds 1–8 train, fold 9 validation,
 fold 10 test. They are patient-disjoint.
 
-`data/processed_verified_backup/` is a byte-identical copy of `data/processed/`.
+The canonical processed dataset directory is `data/processed/` (containing `X.npy`,
+`y.npy`, `folds.npy`, `ecg_ids.npy`, `sites.npy`, and `processed_metadata.csv`).
 
 ## 3. Output safety
 
