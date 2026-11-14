@@ -1,19 +1,51 @@
-﻿import numpy as np
+import os
+import numpy as np
 import pandas as pd
 
 from src.preprocessing import CLASSES, load_metadata, multi_hot
 
 ROOT = "data/raw/ptb-xl"
 PROCESSED = "data/processed"
+LFS_SIGNATURE = b"version https://git-lfs"
+
+
+def is_real_file(path):
+    """Check if file exists and is not a Git LFS pointer."""
+    try:
+        with open(path, "rb") as handle:
+            return handle.read(len(LFS_SIGNATURE)) != LFS_SIGNATURE
+    except OSError:
+        return False
 
 
 # --------------------------------------------------
-# 1. LOAD PROCESSED ARRAYS
+# 1. LOAD PROCESSED ARRAYS / METADATA
 # --------------------------------------------------
 
-processed_y = np.load(f"{PROCESSED}/y.npy")
-folds = np.load(f"{PROCESSED}/folds.npy")
-ecg_ids = np.load(f"{PROCESSED}/ecg_ids.npy")
+is_real_npy = is_real_file(f"{PROCESSED}/y.npy")
+
+if is_real_npy:
+    print("\n[INFO] Loading binary NumPy arrays from disk.")
+    processed_y = np.load(f"{PROCESSED}/y.npy")
+    folds = np.load(f"{PROCESSED}/folds.npy")
+    ecg_ids = np.load(f"{PROCESSED}/ecg_ids.npy")
+else:
+    print("\n[NOTE] data/processed/*.npy are Git LFS pointer files.")
+    print("[NOTE] Loading folds and ECG IDs from data/processed/processed_metadata.csv")
+    print("[NOTE] Reconstructing target labels using the documented CardioFed policy.")
+    meta_proc = pd.read_csv(f"{PROCESSED}/processed_metadata.csv")
+    ecg_ids = meta_proc["ecg_id"].to_numpy(dtype=np.int64)
+    folds = meta_proc["strat_fold"].to_numpy(dtype=np.int64)
+
+    orig_meta = load_metadata(ROOT).loc[ecg_ids]
+    exclusive_superclasses = []
+    for labels in orig_meta["superclasses"]:
+        labels_set = set(labels)
+        abnormal = labels_set - {"NORM"}
+        if abnormal:
+            labels_set = abnormal
+        exclusive_superclasses.append(sorted(labels_set))
+    processed_y = multi_hot(exclusive_superclasses)
 
 print("\n========== SHAPE VERIFICATION ==========")
 print("Processed labels:", processed_y.shape)
@@ -33,6 +65,7 @@ if len(np.unique(ecg_ids)) != len(ecg_ids):
 
 if not np.isin(processed_y, [0, 1]).all():
     raise ValueError("Processed labels contain values other than 0 and 1.")
+
 
 
 # --------------------------------------------------
