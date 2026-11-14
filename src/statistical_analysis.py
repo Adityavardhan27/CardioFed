@@ -7,11 +7,23 @@ For every model in src/model_registry.py this script:
   2. computes 95% percentile bootstrap confidence intervals for macro- and
      per-class AUROC/F1, resampling PATIENTS (some test patients have several
      ECGs, so records are not independent);
-  3. compares pre-specified model pairs with a paired bootstrap and reports
-     two-sided p-values with Holm correction.
+  3. compares pre-specified model pairs with a paired cluster bootstrap,
+     reporting 95% percentile confidence intervals of paired differences
+     as the primary inferential output alongside descriptive sign proportions.
 
 Thresholds are never re-tuned here: each model keeps its validation-tuned
 thresholds from the original evaluation.
+
+Inference Policy:
+  Paired 95% percentile bootstrap confidence intervals [ci_low, ci_high] are the
+  primary inferential output. Intervals excluding zero (ci_excludes_zero) are the
+  project's stated inferential criterion for detecting differences, not a
+  substitute for a separately justified multiple-comparison procedure.
+  bootstrap_sign_prob (and its legacy alias p_value) reports empirical sign
+  consistency across replicates as a descriptive statistic, NOT a formal
+  null-hypothesis test p-value. Holm correction and formal significance flags
+  are deliberately omitted as applying them to descriptive sign proportions is
+  methodologically invalid.
 
 Outputs (default results/revised/statistics/):
   overall_with_ci.csv, per_class_with_ci.csv, paired_differences.csv,
@@ -67,6 +79,12 @@ def per_class_f1(pred, y):
 
 
 def holm(pvalues):
+    """Holm-Bonferroni step-down correction for a family of valid p-values.
+
+    NOTE: This procedure requires valid p-values that control type I error
+    under the null hypothesis. It must NOT be applied to descriptive bootstrap
+    statistics such as bootstrap_sign_prob.
+    """
     pvalues = np.asarray(pvalues, dtype=float)
     adjusted = np.full_like(pvalues, np.nan)
     valid_mask = np.isfinite(pvalues)
@@ -84,6 +102,62 @@ def holm(pvalues):
 
     adjusted[valid_mask] = valid_adjusted
     return adjusted
+
+
+def compute_paired_comparison(samples_a, samples_b, point_diff=0.0):
+    """Compute paired bootstrap difference statistics between two models.
+
+    Parameters
+    ----------
+    samples_a : array-like
+        Bootstrap metric samples for model A.
+    samples_b : array-like
+        Bootstrap metric samples for model B.
+    point_diff : float, optional
+        Point estimate difference (point_a - point_b). Defaults to 0.0.
+
+    Returns
+    -------
+    dict
+        Dictionary containing:
+        - difference: float, point estimate difference
+        - ci_low: float, 2.5th percentile of paired differences
+        - ci_high: float, 97.5th percentile of paired differences
+        - ci_excludes_zero: bool, True if 95% CI excludes 0.0 (primary inferential criterion)
+        - bootstrap_sign_prob: float, descriptive sign-consistency statistic
+        - p_value: float, legacy alias for bootstrap_sign_prob (NOT a formal hypothesis test p-value)
+        - valid_bootstrap_samples: int, count of valid paired replicates
+        - excluded_bootstrap_samples: int, count of excluded replicates
+    """
+    sa = np.asarray(samples_a, dtype=float)
+    sb = np.asarray(samples_b, dtype=float)
+    valid_mask = np.isfinite(sa) & np.isfinite(sb)
+    valid_count = int(valid_mask.sum())
+    excluded_count = int((~valid_mask).sum())
+
+    if valid_count == 0:
+        ci_low = float("nan")
+        ci_high = float("nan")
+        sign_prob = float("nan")
+        excludes_zero = False
+    else:
+        d = sa[valid_mask] - sb[valid_mask]
+        ci_low = float(np.percentile(d, 2.5))
+        ci_high = float(np.percentile(d, 97.5))
+        excludes_zero = bool((ci_low > 0.0) or (ci_high < 0.0))
+        p = 2.0 * min((d <= 0.0).mean(), (d >= 0.0).mean())
+        sign_prob = float(min(1.0, max(p, 1.0 / valid_count)))
+
+    return {
+        "difference": float(point_diff),
+        "ci_low": ci_low,
+        "ci_high": ci_high,
+        "ci_excludes_zero": excludes_zero,
+        "bootstrap_sign_prob": sign_prob,
+        "p_value": sign_prob,  # legacy alias for downstream compatibility; NOT a formal p-value
+        "valid_bootstrap_samples": valid_count,
+        "excluded_bootstrap_samples": excluded_count,
+    }
 
 
 
@@ -237,38 +311,26 @@ def main(args):
         if a not in names or b not in names:
             continue
         for metric, samples in (("macro_auroc", auc_s), ("macro_f1", f1_s)):
-            sa, sb = np.array(samples[a]), np.array(samples[b])
-            valid_mask = np.isfinite(sa) & np.isfinite(sb)
-            valid_count = int(valid_mask.sum())
-            excluded_count = int((~valid_mask).sum())
-            if valid_count == 0:
-                ci_low, ci_high, p = float("nan"), float("nan"), float("nan")
-            else:
-                d = sa[valid_mask] - sb[valid_mask]
-                ci_low = float(np.percentile(d, 2.5))
-                ci_high = float(np.percentile(d, 97.5))
-                p = 2 * min((d <= 0).mean(), (d >= 0).mean())
-                p = float(min(1.0, max(p, 1.0 / valid_count)))
-
             point_a = [r for r in overall if r["model"] == a][0][metric]
             point_b = [r for r in overall if r["model"] == b][0][metric]
-            rows.append({
-                "model_a": a, "model_b": b, "question": question,
-                "metric": metric, "difference": point_a - point_b,
-                "ci_low": ci_low,
-                "ci_high": ci_high,
-                "bootstrap_sign_prob": p,
-                "p_value": p,
-                "valid_bootstrap_samples": valid_count,
-                "excluded_bootstrap_samples": excluded_count,
+            point_diff = point_a - point_b
+
+            stats = compute_paired_comparison(samples[a], samples[b], point_diff=point_diff)
+            stats.update({
+                "model_a": a,
+                "model_b": b,
+                "question": question,
+                "metric": metric,
             })
+            rows.append(stats)
     diffs = pd.DataFrame(rows)
-    for metric in ("macro_auroc", "macro_f1"):
-        mask = diffs["metric"] == metric
-        diffs.loc[mask, "p_value_holm"] = holm(diffs.loc[mask, "p_value"].to_numpy())
-    diffs["significant_at_0.05_holm"] = (
-        (diffs["p_value_holm"] < 0.05) & np.isfinite(diffs["p_value_holm"])
-    )
+    col_order = [
+        "model_a", "model_b", "question", "metric", "difference",
+        "ci_low", "ci_high", "ci_excludes_zero",
+        "bootstrap_sign_prob", "p_value",
+        "valid_bootstrap_samples", "excluded_bootstrap_samples",
+    ]
+    diffs = diffs[[c for c in col_order if c in diffs.columns]]
 
     pd.DataFrame(overall).to_csv(outputs[0], index=False)
     pd.DataFrame(per_class).to_csv(outputs[1], index=False)
@@ -289,9 +351,9 @@ def main(args):
                 "f1_replicate": "Defined for all replicates since F1 is evaluable under single-outcome distributions (precision/recall zero-division=0).",
             },
             "paired_inference": {
-                "primary_criterion": "95% percentile bootstrap confidence interval of paired differences [ci_low, ci_high]. Claims of difference require this interval to exclude 0.0.",
-                "sign_prob_interpretation": "bootstrap_sign_prob (and p_value) represents an empirical bootstrap sign-proportion estimate 2 * min(P(d <= 0), P(d >= 0)) floored at 1/n_valid measuring replicate sign consistency. It is a descriptive statistic rather than a formal null-hypothesis test p-value.",
-                "zero_valid_handling": "Comparisons with 0 valid replicates yield NaN for CI and sign-probability, receive NaN for Holm-adjusted values, and do not penalize the family size m of testable hypotheses.",
+                "primary_criterion": "95% percentile bootstrap confidence interval of paired differences [ci_low, ci_high]. Intervals excluding zero (ci_excludes_zero == True) are the project's stated inferential criterion for detecting differences, not a substitute for a separately justified multiple-comparison procedure.",
+                "sign_prob_interpretation": "bootstrap_sign_prob (and legacy alias p_value) represents an empirical bootstrap sign-proportion estimate 2 * min(P(d <= 0), P(d >= 0)) floored at 1/n_valid measuring replicate sign consistency. It is a descriptive statistic rather than a formal null-hypothesis test p-value. Holm correction and formal significance flags are deliberately omitted as applying them to a descriptive sign proportion is methodologically invalid.",
+                "zero_valid_handling": "Comparisons with 0 valid replicates safely yield NaN for ci_low, ci_high, and bootstrap_sign_prob, and ci_excludes_zero evaluates to False.",
             },
         },
         "thresholds": "validation-tuned thresholds from each original evaluation JSON",
@@ -306,8 +368,10 @@ def main(args):
     print("\n" + pd.DataFrame(overall)[[
         "model", "macro_auroc", "macro_auroc_ci_low", "macro_auroc_ci_high",
         "macro_f1", "macro_f1_ci_low", "macro_f1_ci_high"]].round(4).to_string(index=False))
-    print("\n" + diffs[["model_a", "model_b", "metric", "difference", "ci_low",
-                        "ci_high", "p_value", "p_value_holm"]].round(4).to_string(index=False))
+    print("\n" + diffs[[
+        "model_a", "model_b", "metric", "difference", "ci_low",
+        "ci_high", "ci_excludes_zero", "bootstrap_sign_prob"
+    ]].round(4).to_string(index=False))
     print("\nSaved to", out)
 
 

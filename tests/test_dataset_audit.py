@@ -9,7 +9,7 @@ import pytest
 from src.preprocessing import CLASSES, load_metadata, multi_hot, preprocess_signal
 from src.thresholds import tune_thresholds
 from src.evaluate import compute_metrics
-from src.statistical_analysis import holm, patient_bootstrap_indices, macro_auc
+from src.statistical_analysis import holm, patient_bootstrap_indices, macro_auc, compute_paired_comparison
 from rebuild_labels import build_labels
 
 RAW_DB = "data/raw/ptb-xl/ptbxl_database.csv"
@@ -328,46 +328,64 @@ def test_holm_handles_nan_pvalues_safely():
 
 
 def test_zero_valid_replicate_paired_comparison_safety():
-    """Verify paired comparison logic safely produces NaNs and non-significant flags when 0 valid replicates exist."""
-    # Simulate a metric where all replicates are NaN (zero valid replicates)
-    diff_reps = np.full(50, np.nan)
-    valid_mask = np.isfinite(diff_reps)
-    valid_count = int(valid_mask.sum())
-    excluded_count = int((~valid_mask).sum())
-    assert valid_count == 0
-    assert excluded_count == 50
+    """Verify production paired comparison logic safely produces NaNs and excludes zero=False when 0 valid replicates exist."""
+    # Production comparison function called directly with all-NaN replicate arrays
+    samples_a = np.full(50, np.nan)
+    samples_b = np.full(50, np.nan)
 
-    if valid_count > 0:
-        d = diff_reps[valid_mask]
-        ci_low, ci_high = np.percentile(d, [2.5, 97.5])
-        p = max(2.0 * min((d <= 0.0).mean(), (d >= 0.0).mean()), 1.0 / valid_count)
-    else:
-        ci_low = float("nan")
-        ci_high = float("nan")
-        p = float("nan")
+    res = compute_paired_comparison(samples_a, samples_b, point_diff=0.04)
 
-    record = {
-        "metric": "macro_auroc",
-        "ci_low": ci_low,
-        "ci_high": ci_high,
-        "bootstrap_sign_prob": p,
-        "p_value": p,
-        "valid_bootstrap_samples": valid_count,
-        "excluded_bootstrap_samples": excluded_count,
-    }
+    assert np.isnan(res["ci_low"])
+    assert np.isnan(res["ci_high"])
+    assert res["ci_excludes_zero"] is False
+    assert np.isnan(res["bootstrap_sign_prob"])
+    assert np.isnan(res["p_value"])
+    assert res["valid_bootstrap_samples"] == 0
+    assert res["excluded_bootstrap_samples"] == 50
 
-    df = pd.DataFrame([record])
-    df["p_value_holm"] = holm(df["p_value"].to_numpy())
-    df["significant_at_0.05_holm"] = (
-        (df["p_value_holm"] < 0.05) & np.isfinite(df["p_value_holm"])
-    )
 
-    assert np.isnan(df.loc[0, "ci_low"])
-    assert np.isnan(df.loc[0, "ci_high"])
-    assert np.isnan(df.loc[0, "bootstrap_sign_prob"])
-    assert np.isnan(df.loc[0, "p_value_holm"])
-    assert df.loc[0, "valid_bootstrap_samples"] == 0
-    assert df.loc[0, "significant_at_0.05_holm"] == False
+def test_sign_proportions_not_presented_as_formal_pvalues_or_hypotheses():
+    """Verify descriptive sign proportions are never presented as formal p-values or used for formal significance flags."""
+    import inspect
+    from src import statistical_analysis
+
+    # 1. Verify production comparison output contract
+    samples_a = np.array([0.91, 0.92, 0.93, 0.90, 0.89])
+    samples_b = np.array([0.88, 0.89, 0.90, 0.87, 0.86])
+    res = compute_paired_comparison(samples_a, samples_b, point_diff=0.03)
+
+    # Must contain primary inferential criterion and descriptive statistic
+    assert "ci_low" in res and "ci_high" in res
+    assert "ci_excludes_zero" in res
+    assert "bootstrap_sign_prob" in res
+    assert "p_value" in res
+    # p_value must be identical to bootstrap_sign_prob (legacy alias only)
+    assert res["p_value"] == res["bootstrap_sign_prob"]
+
+    # Must NOT generate formal significance flags or Holm p-values on descriptive statistic
+    assert "significant_at_0.05_holm" not in res
+    assert "p_value_holm" not in res
+
+    # 2. Verify CI excludes zero logic
+    # Difference strictly positive
+    pos = compute_paired_comparison(np.array([1.0, 1.1, 1.2]), np.array([0.5, 0.6, 0.7]))
+    assert pos["ci_excludes_zero"] is True
+    assert pos["ci_low"] > 0
+
+    # Difference strictly negative
+    neg = compute_paired_comparison(np.array([0.5, 0.6, 0.7]), np.array([1.0, 1.1, 1.2]))
+    assert neg["ci_excludes_zero"] is True
+    assert neg["ci_high"] < 0
+
+    # Difference spans zero
+    span = compute_paired_comparison(np.array([0.5, 1.5]), np.array([1.0, 1.0]))
+    assert span["ci_excludes_zero"] is False
+
+    # 3. Verify statistical_analysis.main source does not apply Holm to p_value
+    src_code = inspect.getsource(statistical_analysis.main)
+    assert 'diffs.loc[mask, "p_value_holm"]' not in src_code
+    assert "significant_at_0.05_holm" not in src_code
+    assert "ci_excludes_zero" in src_code
 
 
 def test_validity_counts_distinguish_auroc_and_f1():

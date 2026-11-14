@@ -130,21 +130,26 @@ def main(args):
     grouped(per_class, "auroc", "Per-class test AUROC", paths["per_class_auroc.png"])
 
     diffs = pd.read_csv(os.path.join(args.statistics_dir, "paired_differences.csv"))
+    if "ci_excludes_zero" in diffs.columns:
+        excl_zero = diffs[diffs["ci_excludes_zero"]]
+    else:
+        excl_zero = diffs[(diffs["ci_low"] > 0) | (diffs["ci_high"] < 0)]
+
     summary = {
         "models_compared": overall["model"].tolist(),
-        "note": ("Point estimates only rank models; use the paired comparisons "
-                 "for claims. Thresholds are validation-tuned per model."),
-        "paired_comparisons": diffs[[
-            "model_a", "model_b", "metric", "difference", "ci_low", "ci_high",
-            "p_value", "p_value_holm", "significant_at_0.05_holm"]].to_dict(orient="records"),
-        "significant_differences": diffs[diffs["significant_at_0.05_holm"]][
-            ["model_a", "model_b", "metric"]].to_dict(orient="records"),
+        "note": ("Point estimates only rank models; use paired bootstrap confidence "
+                 "intervals for claims. Thresholds are validation-tuned per model. "
+                 "Inferential criterion: 95% bootstrap CI excludes 0.0."),
+        "paired_comparisons": diffs.to_dict(orient="records"),
+        "differences_excluding_zero": excl_zero[
+            ["model_a", "model_b", "metric", "difference", "ci_low", "ci_high"]
+        ].to_dict(orient="records"),
     }
     with open(paths["comparison_summary.json"], "w") as f:
         json.dump(summary, f, indent=2)
 
     print(overall.drop(columns="label").round(4).to_string(index=False))
-    print("\nSignificant differences (Holm, 0.05):", summary["significant_differences"])
+    print("\nDifferences where 95% CI excludes zero:", summary["differences_excluding_zero"])
     print("Saved to", out)
 
 
