@@ -76,7 +76,13 @@ def load_runs():
 
 
 def macro_auc(p, y):
-    return float(np.mean([roc_auc_score(y[:, i], p[:, i]) for i in range(5)]))
+    valid = [
+        float(roc_auc_score(y[:, i], p[:, i]))
+        for i in range(5)
+        if len(np.unique(y[:, i])) == 2
+    ]
+    return float(np.mean(valid)) if valid else float("nan")
+
 
 
 def macro_f1(pred, y):

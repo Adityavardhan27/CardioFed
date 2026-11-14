@@ -176,13 +176,21 @@ To compare models $A$ and $B$:
    $$\tilde{p}_{(k)} = \min(1, (m - k + 1) \cdot p_{(k)})$$
 3. Enforce monotonicity:
    $$\tilde{p}_{(k)} = \max(\tilde{p}_{(k-1)}, \tilde{p}_{(k)})$$
-Verified in `tests/test_dataset_audit.py::test_holm_bonferroni_correction`. The implementation is exact, preserves order, and correctly controls FWER at $\alpha = 0.05$.
+### 6.4 Invalid Bootstrap Samples (Single-Class Subsets)
+In multi-label classification bootstrap resampling:
+- If a bootstrap draw misses all positive (or all negative) examples for a low-prevalence class, $\text{AUROC}$ for that class is mathematically undefined. Calling `roc_auc_score` on single-class data returns `NaN` (with an `UndefinedMetricWarning`).
+- Unchecked, a single `NaN` in `pc_auc` propagates to `np.mean(pc_auc)`, which produces `NaN` in `macro_auc` and causes `np.percentile` across bootstrap replicates to collapse to `NaN`.
+- **Audit & Resolution:**
+  1. `patient_bootstrap_indices(patients, n_boot, seed, y=y_test)` accepts the target label array $y$. It checks that every class biclassed in the source set remains biclassed in the resample; invalid draws lacking class representation are automatically discarded and redrawn.
+  2. `macro_auc` in `src/statistical_analysis.py` and `src/p2_analysis.py` explicitly filters classes with `len(np.unique(y[:, i])) == 2`, preventing undefined metric errors.
+  3. `ci(a)` and per-class AUROC percentile functions filter finite values (`np.isfinite`), preventing single undefined draws from corrupting the entire confidence interval.
+  4. Regression tests in `tests/test_dataset_audit.py` (`test_macro_auc_handles_single_class_samples` and `test_patient_bootstrap_resamples_when_class_missing`) verify this behavior.
 
 ---
 
 ## 7. Discovered Nuances & Code Corrections
 
-During the audit, two tooling nuances were identified and corrected:
+During the audit, three nuances were identified and corrected:
 
 1. **`src/audit_labels.py` Label Reporting Nuance:**
    - *Previous state:* Loaded metadata via `load_metadata` (Stage 1) and printed `NORM + abnormal overlap: 417` and `NORM: 9514`. It did not display Stage 2 (NORM-exclusive) labels, which could lead an auditor to believe the exclusivity policy was missing.
@@ -192,8 +200,13 @@ During the audit, two tooling nuances were identified and corrected:
    - *Previous state:* Unconditionally called `np.load("data/processed/y.npy")`. In environments without Git-LFS smudging, this crashed with `ValueError: Cannot load file containing pickled data`.
    - *Correction:* Added `is_real_file()` check. If files are LFS pointers, it loads `processed_metadata.csv` (which is tracked as clean text) and reconstructs target labels using `load_metadata`, performing all shape, fold, patient-wise, and split audits cleanly.
 
-3. **New Audit Test Suite (`tests/test_dataset_audit.py`):**
-   - Added 10 automated unit and integration tests verifying label mapping, NORM mutual exclusivity, metadata alignment, split counts, patient isolation, intra-record signal normalization, metric computation, post-hoc NORM logic, patient bootstrap clustering, and Holm correction.
+3. **Bootstrap Single-Class Representation Safeguards:**
+   - *Previous state:* In `src/statistical_analysis.py` and `src/p2_analysis.py`, `macro_auc` and the bootstrap inner loop evaluated `roc_auc_score` without checking whether both classes were present in the sample, risking `NaN` propagation if a rare class had only positive or only negative examples.
+   - *Correction:* Updated `patient_bootstrap_indices` to redraw invalid samples where a class lacks binary representation, guarded `macro_auc` to evaluate only biclassed targets, and filtered finite values in CI percentile calculations.
+
+4. **New Audit Test Suite (`tests/test_dataset_audit.py`):**
+   - Added 12 automated unit and integration tests verifying label mapping, NORM mutual exclusivity, metadata alignment, split counts, patient isolation, intra-record signal normalization, metric computation, post-hoc NORM logic, patient bootstrap clustering, single-class bootstrap handling, and Holm correction.
+
 
 ---
 

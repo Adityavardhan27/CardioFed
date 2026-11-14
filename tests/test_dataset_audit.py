@@ -9,7 +9,7 @@ import pytest
 from src.preprocessing import CLASSES, load_metadata, multi_hot, preprocess_signal
 from src.thresholds import tune_thresholds
 from src.evaluate import compute_metrics
-from src.statistical_analysis import holm, patient_bootstrap_indices
+from src.statistical_analysis import holm, patient_bootstrap_indices, macro_auc
 from rebuild_labels import build_labels
 
 RAW_DB = "data/raw/ptb-xl/ptbxl_database.csv"
@@ -231,6 +231,44 @@ def test_holm_bonferroni_correction():
     assert adjusted[3] == pytest.approx(0.10)
     assert np.all(adjusted <= 1.0)
     assert np.all(adjusted >= 0.0)
+
+
+def test_macro_auc_handles_single_class_samples():
+    """Verify macro_auc does not return NaN or crash when some classes have only one unique label."""
+    # Class 0 and 1 have both 0 and 1; Class 2, 3, 4 have all 0s
+    y = np.zeros((10, 5), dtype=np.float32)
+    y[:5, 0] = 1.0
+    y[:5, 1] = 1.0
+
+    probs = np.zeros((10, 5), dtype=np.float32)
+    probs[:5, 0] = 0.9
+    probs[5:, 0] = 0.1
+    probs[:5, 1] = 0.8
+    probs[5:, 1] = 0.2
+
+    # AUROC for class 0 and 1 is 1.0; classes 2, 3, 4 are undefined (only negative examples)
+    score = macro_auc(probs, y)
+    assert np.isfinite(score)
+    assert score == pytest.approx(1.0)
+
+
+def test_patient_bootstrap_resamples_when_class_missing():
+    """Verify patient_bootstrap_indices with y resamples until all biclassed classes have both labels."""
+    # 6 patients: P1-P5 have normal/abnormal, but only P6 has the positive case for class 1
+    patients = np.array(["P1", "P2", "P3", "P4", "P5", "P6"])
+    y = np.zeros((6, 2), dtype=np.float32)
+    y[0, 0] = 1.0  # P1 has class 0
+    y[5, 1] = 1.0  # only P6 has class 1
+
+    # In random bootstrap, P6 is missed in (5/6)^6 ≈ 33.5% of draws.
+    # Passing y ensures patient_bootstrap_indices rejects invalid draws and yields valid samples.
+    samples = list(patient_bootstrap_indices(patients, n_boot=25, seed=123, y=y))
+    assert len(samples) == 25
+    for s in samples:
+        yb = y[s]
+        assert len(np.unique(yb[:, 0])) == 2
+        assert len(np.unique(yb[:, 1])) == 2
+
 
 
 # ==============================================================================

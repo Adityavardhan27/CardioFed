@@ -48,7 +48,12 @@ COMPARISONS = [
 
 
 def macro_auc(probs, y):
-    return float(np.mean([roc_auc_score(y[:, i], probs[:, i]) for i in range(5)]))
+    aucs = [
+        float(roc_auc_score(y[:, i], probs[:, i]))
+        for i in range(5)
+        if len(np.unique(y[:, i])) == 2
+    ]
+    return float(np.mean(aucs)) if aucs else float("nan")
 
 
 def per_class_f1(pred, y):
@@ -69,14 +74,34 @@ def holm(pvalues):
     return adjusted
 
 
-def patient_bootstrap_indices(patients, n_boot, seed):
-    """Yield record indices for each bootstrap sample of patients."""
+def patient_bootstrap_indices(patients, n_boot, seed, y=None):
+    """Yield record indices for each bootstrap sample of patients.
+
+    If y is provided, samples where any class present in y has only
+    positive or only negative examples are discarded and redrawn,
+    ensuring exactly n_boot valid bootstrap samples.
+    """
     rng = np.random.default_rng(seed)
     unique = np.unique(patients)
     groups = {p: np.where(patients == p)[0] for p in unique}
-    for _ in range(n_boot):
+
+    biclased_classes = []
+    if y is not None:
+        for i in range(y.shape[1]):
+            if len(np.unique(y[:, i])) == 2:
+                biclased_classes.append(i)
+
+    yielded = 0
+    while yielded < n_boot:
         chosen = rng.choice(unique, size=len(unique), replace=True)
-        yield np.concatenate([groups[p] for p in chosen])
+        ix = np.concatenate([groups[p] for p in chosen])
+        if y is not None and biclased_classes:
+            yb = y[ix]
+            if not all(len(np.unique(yb[:, i])) == 2 for i in biclased_classes):
+                continue
+        yield ix
+        yielded += 1
+
 
 
 def main(args):
@@ -128,18 +153,28 @@ def main(args):
     cls_f1 = {n: [] for n in names}
     preds = {n: (probs[n] >= thresholds[n]).astype(int) for n in names}
 
-    for ix in patient_bootstrap_indices(patients, args.n_boot, args.seed):
+    for ix in patient_bootstrap_indices(patients, args.n_boot, args.seed, y=y_test):
         yb = y_test[ix]
         for n in names:
-            pc_auc = [roc_auc_score(yb[:, i], probs[n][ix, i]) for i in range(5)]
+            pc_auc = [
+                float(roc_auc_score(yb[:, i], probs[n][ix, i]))
+                if len(np.unique(yb[:, i])) == 2
+                else float("nan")
+                for i in range(5)
+            ]
             pc_f1 = per_class_f1(preds[n][ix], yb)
             cls_auc[n].append(pc_auc)
             cls_f1[n].append(pc_f1)
-            auc_s[n].append(np.mean(pc_auc))
-            f1_s[n].append(np.mean(pc_f1))
+            valid_auc = [v for v in pc_auc if np.isfinite(v)]
+            auc_s[n].append(float(np.mean(valid_auc)) if valid_auc else float("nan"))
+            f1_s[n].append(float(np.mean(pc_f1)))
 
     def ci(a):
-        return [float(np.percentile(a, 2.5)), float(np.percentile(a, 97.5))]
+        a = np.asarray(a)
+        valid = a[np.isfinite(a)]
+        if len(valid) == 0:
+            return [float("nan"), float("nan")]
+        return [float(np.percentile(valid, 2.5)), float(np.percentile(valid, 97.5))]
 
     overall, per_class = [], []
     for n in names:
@@ -157,11 +192,14 @@ def main(args):
         })
         ca, cf = np.array(cls_auc[n]), np.array(cls_f1[n])
         for i, c in enumerate(CLASSES):
+            valid_ca = ca[:, i][np.isfinite(ca[:, i])]
+            auc_ci_low = float(np.percentile(valid_ca, 2.5)) if len(valid_ca) else float("nan")
+            auc_ci_high = float(np.percentile(valid_ca, 97.5)) if len(valid_ca) else float("nan")
             per_class.append({
                 "model": n, "class": c,
                 "auroc": point["per_class_auroc"][c],
-                "auroc_ci_low": float(np.percentile(ca[:, i], 2.5)),
-                "auroc_ci_high": float(np.percentile(ca[:, i], 97.5)),
+                "auroc_ci_low": auc_ci_low,
+                "auroc_ci_high": auc_ci_high,
                 "f1": point["per_class_f1"][c],
                 "f1_ci_low": float(np.percentile(cf[:, i], 2.5)),
                 "f1_ci_high": float(np.percentile(cf[:, i], 97.5)),
