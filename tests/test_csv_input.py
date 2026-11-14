@@ -13,12 +13,16 @@ from src.app import LEADS, prepare_ecg_csv
 ROOT = Path(__file__).resolve().parent.parent
 
 
-def _generate_valid_ecg_df(n_samples=1000, seed=42):
-    """Generate a model-ready synthetic preprocessed 12-lead ECG DataFrame."""
+def _generate_gaussian_fixture_df(n_samples=1000, seed=42):
+    """Generate a synthetic Gaussian statistical test fixture DataFrame (zero-mean, unit-variance standardized).
+
+    Note: This is an artificial statistical fixture designed solely for input validation and schema
+    testing, NOT a realistic ECG waveform or clinically representative data.
+    """
     rng = np.random.default_rng(seed)
-    # Generate 1000 samples with zero mean and unit variance per lead
+    # Generate n_samples Gaussian values with zero mean and unit variance per lead
     raw = rng.standard_normal(size=(n_samples, len(LEADS))).astype(np.float32)
-    # Ensure exact zero mean and unit variance
+    # Ensure exact zero mean and unit variance for statistical fixture testing
     normalized = (raw - raw.mean(axis=0, keepdims=True)) / (raw.std(axis=0, keepdims=True) + 1e-8)
     return pd.DataFrame(normalized, columns=LEADS)
 
@@ -35,9 +39,12 @@ def _df_to_csv_io(df):
 # Valid Input Tests
 # -----------------------------------------------------------------------------
 
-def test_prepare_ecg_csv_valid_synthetic():
-    """Verify that a valid preprocessed 12-lead ECG CSV is accepted."""
-    df = _generate_valid_ecg_df(1000)
+def test_prepare_ecg_csv_valid_gaussian_fixture():
+    """Verify that a synthetic Gaussian statistical test fixture conforming to shape and normalization requirements is accepted.
+
+    (Note: This is an artificial statistical fixture, NOT a realistic ECG waveform).
+    """
+    df = _generate_gaussian_fixture_df(1000)
     csv_buf = _df_to_csv_io(df)
 
     signal, ecg_df = prepare_ecg_csv(csv_buf)
@@ -51,8 +58,8 @@ def test_prepare_ecg_csv_valid_synthetic():
 
 
 def test_prepare_ecg_csv_with_metadata_columns():
-    """Verify that standard metadata columns (e.g. sample, time) are permitted if leads are ordered."""
-    df = _generate_valid_ecg_df(1000)
+    """Verify that standard metadata columns (e.g. sample, time) are permitted alongside valid Gaussian statistical fixture data."""
+    df = _generate_gaussian_fixture_df(1000)
     df.insert(0, "ecg_id", 9999)
     df.insert(1, "sample", np.arange(1000))
     df.insert(2, "time_seconds", np.arange(1000) * 0.01)
@@ -89,28 +96,28 @@ def test_reject_empty_csv():
 
 
 def test_reject_wrong_sample_count():
-    """Verify that recordings with != 1000 samples are rejected."""
+    """Verify that non-1000 row counts are rejected when using the Gaussian statistical fixture."""
     # Too short (500 samples)
-    df_short = _generate_valid_ecg_df(500)
+    df_short = _generate_gaussian_fixture_df(500)
     with pytest.raises(ValueError, match="Expected exactly 1,000 samples"):
         prepare_ecg_csv(_df_to_csv_io(df_short))
 
     # Too long (1001 samples)
-    df_long = _generate_valid_ecg_df(1001)
+    df_long = _generate_gaussian_fixture_df(1001)
     with pytest.raises(ValueError, match="Expected exactly 1,000 samples"):
         prepare_ecg_csv(_df_to_csv_io(df_long))
 
 
 def test_reject_missing_leads():
-    """Verify that a CSV missing required lead columns is rejected."""
-    df = _generate_valid_ecg_df(1000).drop(columns=["V6", "Lead_I"])
+    """Verify that a CSV fixture missing required lead columns is rejected."""
+    df = _generate_gaussian_fixture_df(1000).drop(columns=["V6", "Lead_I"])
     with pytest.raises(ValueError, match="Missing required ECG lead column"):
         prepare_ecg_csv(_df_to_csv_io(df))
 
 
 def test_reject_wrong_lead_order():
-    """Verify that lead columns arranged in non-standard order are rejected."""
-    df = _generate_valid_ecg_df(1000)
+    """Verify that lead columns arranged in non-standard order in a fixture are rejected."""
+    df = _generate_gaussian_fixture_df(1000)
     # Swap V1 and Lead_I
     cols = list(df.columns)
     cols[0], cols[6] = cols[6], cols[0]
@@ -135,24 +142,24 @@ def test_reject_duplicate_lead_columns():
 # -----------------------------------------------------------------------------
 
 def test_reject_nan_values():
-    """Verify that missing/NaN values are detected and rejected."""
-    df = _generate_valid_ecg_df(1000)
+    """Verify that missing/NaN values in a statistical fixture are detected and rejected."""
+    df = _generate_gaussian_fixture_df(1000)
     df.loc[10, "Lead_II"] = np.nan
     with pytest.raises(ValueError, match="missing \\(NaN\\) or non-numeric"):
         prepare_ecg_csv(_df_to_csv_io(df))
 
 
 def test_reject_non_numeric_strings():
-    """Verify that corrupted string entries are detected and rejected."""
-    df = _generate_valid_ecg_df(1000).astype(object)
+    """Verify that corrupted string entries in a statistical fixture are detected and rejected."""
+    df = _generate_gaussian_fixture_df(1000).astype(object)
     df.loc[50, "V3"] = "corrupt_data"
     with pytest.raises(ValueError, match="missing \\(NaN\\) or non-numeric"):
         prepare_ecg_csv(_df_to_csv_io(df))
 
 
 def test_reject_infinite_values():
-    """Verify that infinite values (Inf) are rejected."""
-    df = _generate_valid_ecg_df(1000)
+    """Verify that infinite values (Inf) in a statistical fixture are rejected."""
+    df = _generate_gaussian_fixture_df(1000)
     df.loc[25, "aVF"] = np.inf
     with pytest.raises(ValueError, match="infinite \\(Inf\\)"):
         prepare_ecg_csv(_df_to_csv_io(df))
@@ -170,34 +177,34 @@ def test_reject_flatline_signals():
 
 
 def test_reject_raw_unnormalized_millivolts():
-    """Verify that raw millivolt signals (std ~ 0.15 mV) are identified and rejected."""
+    """Verify that signals with standard deviation far below expected normalization range (e.g. std ~ 0.12) are rejected."""
     rng = np.random.default_rng(0)
-    # Typical physical mV ECG signals have std between 0.08 and 0.20 mV
+    # Generate data with std ~ 0.12, well below normalized unit variance
     raw_mv = (rng.standard_normal((1000, 12)) * 0.12).astype(np.float32)
     df_mv = pd.DataFrame(raw_mv, columns=LEADS)
 
-    with pytest.raises(ValueError, match="un-normalized raw physical voltage \\(e\\.g\\., millivolts\\)"):
+    with pytest.raises(ValueError, match="outside the expected normalization/scaling range"):
         prepare_ecg_csv(_df_to_csv_io(df_mv))
 
 
 def test_reject_raw_microvolts_or_large_adc_counts():
-    """Verify that raw microvolts or integer ADC values with excessive amplitudes are rejected."""
+    """Verify that signals with amplitudes far above expected normalization range (e.g. std ~ 150) are rejected."""
     rng = np.random.default_rng(0)
-    # Typical raw microvolts (std ~ 150 uV, peaks > 500)
+    # Generate data with std ~ 150, far above normalized unit variance
     raw_uv = (rng.standard_normal((1000, 12)) * 150.0).astype(np.float32)
     df_uv = pd.DataFrame(raw_uv, columns=LEADS)
 
-    with pytest.raises(ValueError, match="excessively large values"):
+    with pytest.raises(ValueError, match="outside the expected normalization/scaling range"):
         prepare_ecg_csv(_df_to_csv_io(df_uv))
 
 
 def test_reject_severe_dc_baseline_offset():
-    """Verify that uncentered signals with huge DC offset are rejected."""
-    df = _generate_valid_ecg_df(1000)
+    """Verify that uncentered signals with huge DC offset outside expected normalization range are rejected."""
+    df = _generate_gaussian_fixture_df(1000)
     # Add a massive DC offset to Lead_I
     df["Lead_I"] = df["Lead_I"] + 25.0
 
-    with pytest.raises(ValueError, match="significant DC baseline offset"):
+    with pytest.raises(ValueError, match="significant DC baseline offset outside the expected normalization/scaling range"):
         prepare_ecg_csv(_df_to_csv_io(df))
 
 
@@ -206,8 +213,8 @@ def test_reject_severe_dc_baseline_offset():
 # -----------------------------------------------------------------------------
 
 def test_reject_single_flat_lead():
-    """Verify that a single flatline lead cannot pass validation when other 11 leads are valid."""
-    df = _generate_valid_ecg_df(1000)
+    """Verify that a single flatline lead in a Gaussian statistical fixture cannot pass validation."""
+    df = _generate_gaussian_fixture_df(1000)
     df["Lead_II"] = 0.0  # single flat lead
 
     with pytest.raises(ValueError, match="Lead 'Lead_II' has zero or near-zero variance"):
@@ -215,45 +222,45 @@ def test_reject_single_flat_lead():
 
 
 def test_reject_single_incorrectly_scaled_lead_too_small():
-    """Verify that a single lead with reduced scale (std ~ 0.5) is rejected."""
-    df = _generate_valid_ecg_df(1000)
+    """Verify that a single lead with reduced scale (std ~ 0.5) in a Gaussian statistical fixture is rejected."""
+    df = _generate_gaussian_fixture_df(1000)
     df["V2"] = df["V2"] * 0.5  # under-scaled lead
 
-    with pytest.raises(ValueError, match="Lead 'V2' is incorrectly scaled"):
+    with pytest.raises(ValueError, match="Lead 'V2' is outside the expected normalization/scaling range"):
         prepare_ecg_csv(_df_to_csv_io(df))
 
 
 def test_reject_single_incorrectly_scaled_lead_too_large():
-    """Verify that a single lead with excessive scaling (std ~ 2.0) is rejected."""
-    df = _generate_valid_ecg_df(1000)
+    """Verify that a single lead with excessive scaling (std ~ 2.0) in a Gaussian statistical fixture is rejected."""
+    df = _generate_gaussian_fixture_df(1000)
     df["Lead_III"] = df["Lead_III"] * 2.0  # over-scaled lead
 
-    with pytest.raises(ValueError, match="Lead 'Lead_III' is incorrectly scaled"):
+    with pytest.raises(ValueError, match="Lead 'Lead_III' is outside the expected normalization/scaling range"):
         prepare_ecg_csv(_df_to_csv_io(df))
 
 
 def test_reject_single_lead_unnormalized_millivolts():
-    """Verify that a single raw millivolt lead among valid leads is detected and rejected."""
-    df = _generate_valid_ecg_df(1000)
+    """Verify that a single lead with standard deviation far below expected range (std ~ 0.15) is rejected."""
+    df = _generate_gaussian_fixture_df(1000)
     rng = np.random.default_rng(7)
     df["V4"] = (rng.standard_normal(1000) * 0.15).astype(np.float32)
 
-    with pytest.raises(ValueError, match="Lead 'V4' has a standard deviation of .* characteristic of un-normalized"):
+    with pytest.raises(ValueError, match="Lead 'V4' has a standard deviation of .* outside the expected normalization/scaling range"):
         prepare_ecg_csv(_df_to_csv_io(df))
 
 
 def test_reject_single_lead_significant_dc_offset():
-    """Verify that a significant DC baseline offset in a single lead is detected and rejected."""
-    df = _generate_valid_ecg_df(1000)
+    """Verify that a significant DC baseline offset in a single lead of a Gaussian fixture is rejected."""
+    df = _generate_gaussian_fixture_df(1000)
     df["aVF"] = df["aVF"] + 1.5  # significant DC offset in one lead
 
-    with pytest.raises(ValueError, match="Lead 'aVF' has a significant DC baseline offset"):
+    with pytest.raises(ValueError, match="Lead 'aVF' has a significant DC baseline offset outside the expected normalization/scaling range"):
         prepare_ecg_csv(_df_to_csv_io(df))
 
 
-def test_accept_valid_ecg_csv_with_rounding():
-    """Verify that valid preprocessed signals rounded to 2 decimal places pass validation."""
-    df = _generate_valid_ecg_df(1000)
+def test_accept_gaussian_fixture_csv_with_rounding():
+    """Verify that a Gaussian statistical fixture rounded to 2 decimal places passes validation."""
+    df = _generate_gaussian_fixture_df(1000)
     df_rounded = df.round(2)
     signal, ecg_df = prepare_ecg_csv(_df_to_csv_io(df_rounded))
 
@@ -263,7 +270,7 @@ def test_accept_valid_ecg_csv_with_rounding():
 
 def test_reject_wrong_sample_count_clarification():
     """Verify that sample count error clarifies that 1,000 rows alone cannot verify 100 Hz."""
-    df_short = _generate_valid_ecg_df(900)
+    df_short = _generate_gaussian_fixture_df(900)
     with pytest.raises(ValueError, match="1,000 rows alone cannot verify a 100 Hz sampling rate"):
         prepare_ecg_csv(_df_to_csv_io(df_short))
 

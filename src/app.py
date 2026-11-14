@@ -135,10 +135,10 @@ def prepare_ecg_csv(uploaded_file):
       - Preprocessed signal scaling: signals must be per-lead zero-mean and unit-variance
         standardized consistent with src/preprocessing.py ((signal - mean) / (std + 1e-8)),
         allowing for reasonable CSV rounding tolerance (std within [0.80, 1.20] and |mean| <= 0.10).
-        Statistical scaling checks catch un-normalized raw voltages (e.g. mV, µV, ADC counts),
-        flatlines, or improperly scaled leads, but passing these statistical checks does not
-        prove or guarantee that proper bandpass filtering (0.5–40 Hz) or correct preprocessing
-        was performed.
+        Statistical scaling checks catch signals outside the expected normalization/scaling range
+        (such as severe under-scaling, excessive amplitude, flatlines, or uncentered baselines),
+        but passing these statistical checks does not prove or guarantee that proper bandpass
+        filtering (0.5–40 Hz) or correct preprocessing was performed.
     """
 
     try:
@@ -221,8 +221,8 @@ def prepare_ecg_csv(uploaded_file):
     # CardioFed models expect per-lead zero-mean, unit-variance standardized signals (z-scores)
     # consistent with src/preprocessing.py: (signal - mean) / (std + 1e-8).
     # All 12 leads are validated independently with reasonable CSV rounding tolerance.
-    # Note: Statistical scaling checks detect un-normalized physical units, flatlines, or incorrectly
-    # scaled leads, but passing these checks does NOT prove or guarantee that correct preprocessing
+    # Note: Statistical scaling checks detect signals outside the expected normalization/scaling range,
+    # but passing these checks does NOT prove or guarantee that correct preprocessing
     # (such as 0.5-40 Hz bandpass filtering) was performed.
     lead_stds = signal_array.std(axis=0)
     lead_means = signal_array.mean(axis=0)
@@ -244,13 +244,11 @@ def prepare_ecg_csv(uploaded_file):
             f"Valid ECG signals must contain active physiological waveforms across all 12 leads."
         )
 
-    # 6b. Raw millivolts check (un-normalized raw physical voltage)
-    # Physical 12-lead ECG signals in millivolts typically have lead standard deviations between 0.05 and 0.25 mV.
-    # Properly z-scored signals have per-lead standard deviations near 1.0 (expected lead std ≈ 1.0).
+    # 6b. Severe under-scaling / below expected normalization range
     if mean_std < 0.25:
         raise ValueError(
             f"The uploaded ECG has a mean lead standard deviation of {mean_std:.3f}, "
-            f"which is characteristic of un-normalized raw physical voltage (e.g., millivolts). "
+            f"which is outside the expected normalization/scaling range (expected per-lead std ≈ 1.0). "
             f"CardioFed models require per-lead Z-score normalized signals (expected lead std ≈ 1.0). "
             f"Please preprocess your signal with CardioFed's 0.5–40 Hz bandpass filter and z-score standardization."
         )
@@ -259,27 +257,26 @@ def prepare_ecg_csv(uploaded_file):
         bad_lead = LEADS[low_std_indices[0]]
         raise ValueError(
             f"Lead '{bad_lead}' has a standard deviation of {lead_stds[low_std_indices[0]]:.3f}, "
-            f"which is characteristic of un-normalized raw physical voltage (e.g., millivolts) or an incorrectly scaled lead. "
+            f"which is outside the expected normalization/scaling range (expected lead std ≈ 1.0). "
             f"CardioFed models require per-lead Z-score normalized signals (expected lead std ≈ 1.0)."
         )
 
-    # 6c. Raw microvolts or uncalibrated ADC counts check (excessive amplitude)
-    # Standardized signals in PTB-XL have peak amplitudes typically between 3 and 22 standard deviations.
-    # Raw microvolts or integer ADC values produce standard deviations > 20 and amplitudes > 100.
+    # 6c. Excessive amplitude / above expected normalization range
     if mean_std > 20.0 or max_abs > 100.0:
         raise ValueError(
-            f"The uploaded ECG contains excessively large values (mean lead std = {mean_std:.1f}, "
-            f"max absolute amplitude = {max_abs:.1f}). This indicates raw microvolts (µV), uncalibrated ADC "
-            f"counts, or severe noise. CardioFed models require per-lead Z-score normalized signals "
-            f"(expected lead std ≈ 1.0, typical peaks within ±25)."
+            f"The uploaded ECG contains values outside the expected normalization/scaling range "
+            f"(mean lead std = {mean_std:.1f}, max absolute amplitude = {max_abs:.1f}; "
+            f"expected lead std ≈ 1.0, typical peaks within ±25). "
+            f"CardioFed models require per-lead Z-score normalized signals."
         )
     excessive_lead_indices = np.where((lead_stds > 20.0) | (lead_max_abs > 100.0))[0]
     if len(excessive_lead_indices) > 0:
         bad_lead = LEADS[excessive_lead_indices[0]]
         raise ValueError(
-            f"Lead '{bad_lead}' contains excessively large values (std = {lead_stds[excessive_lead_indices[0]]:.1f}, "
-            f"max absolute amplitude = {lead_max_abs[excessive_lead_indices[0]]:.1f}). "
-            f"This indicates raw microvolts (µV), uncalibrated ADC counts, or severe noise. "
+            f"Lead '{bad_lead}' contains values outside the expected normalization/scaling range "
+            f"(std = {lead_stds[excessive_lead_indices[0]]:.1f}, "
+            f"max absolute amplitude = {lead_max_abs[excessive_lead_indices[0]]:.1f}; "
+            f"expected lead std ≈ 1.0). "
             f"CardioFed models require per-lead Z-score normalized signals."
         )
 
@@ -289,7 +286,8 @@ def prepare_ecg_csv(uploaded_file):
     if len(scale_err_indices) > 0:
         bad_lead = LEADS[scale_err_indices[0]]
         raise ValueError(
-            f"Lead '{bad_lead}' is incorrectly scaled (std = {lead_stds[scale_err_indices[0]]:.3f}). "
+            f"Lead '{bad_lead}' is outside the expected normalization/scaling range "
+            f"(std = {lead_stds[scale_err_indices[0]]:.3f}). "
             f"CardioFed models require per-lead Z-score normalized signals (expected lead std ≈ 1.0, "
             f"acceptable range 0.80–1.20 allowing for CSV rounding tolerance)."
         )
@@ -300,7 +298,8 @@ def prepare_ecg_csv(uploaded_file):
     if len(offset_err_indices) > 0:
         bad_lead = LEADS[offset_err_indices[0]]
         raise ValueError(
-            f"Lead '{bad_lead}' has a significant DC baseline offset (mean = {lead_means[offset_err_indices[0]]:.3f}). "
+            f"Lead '{bad_lead}' has a significant DC baseline offset outside the expected normalization/scaling range "
+            f"(mean = {lead_means[offset_err_indices[0]]:.3f}). "
             f"CardioFed models require zero-mean standardized signals (expected lead mean ≈ 0.0, "
             f"allowed absolute mean ≤ 0.10 allowing for CSV rounding tolerance)."
         )
@@ -770,12 +769,13 @@ if input_mode == "CSV File":
         "**per-lead Z-score normalized** (zero mean, unit variance per lead as in `src/preprocessing.py`).\n"
         "- **Validation Scope**: All 12 leads are validated independently for mean (≈ 0.0) and "
         "standard deviation (≈ 1.0) allowing for reasonable CSV rounding tolerance. "
-        "Statistical scaling checks reject flatlines, raw physical voltages (mV, µV, ADC counts), "
-        "and incorrectly scaled leads; however, passing statistical scaling checks does not prove or guarantee "
+        "Statistical scaling checks reject signals outside the expected normalization/scaling range "
+        "(such as flatlines, under-scaled signals, excessive amplitudes, and baseline offsets); "
+        "however, passing statistical scaling checks does not prove or guarantee "
         "that correct bandpass filtering or preprocessing was performed.\n"
         "- **Note on Raw Signals**: The application does **not** automatically filter, resample, or normalize raw ECG signals "
-        "because input sampling frequencies and physical voltage units (e.g., mV, µV, ADC counts) cannot be reliably inferred. "
-        "Un-normalized signals (such as raw millivolts) will be rejected by input validation."
+        "because input sampling frequencies and physical voltage units cannot be reliably inferred. "
+        "Signals outside the expected normalization/scaling range will be rejected by input validation."
     )
 
     with st.expander("ℹ️ Preprocessing & CSV Formatting Guidelines"):
