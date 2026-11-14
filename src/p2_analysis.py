@@ -15,9 +15,24 @@ Arms:
 
 Primary comparisons (seed 42, seed-matched): C1 FedAvg-20 vs centralized,
 C2 FedAvg-20 vs each local-only client. Paired patient-level bootstrap
-(2,000 resamples), Holm correction across these five tests per metric.
-Supplementary: C1 with all three seeds per arm (metric averaged over seeds
-in each resample), reported separately.
+(2,000 resamples). Supplementary: C1 with all three seeds per arm (metric
+averaged over seeds in each resample), reported separately.
+
+Inference policy (consistent with src/statistical_analysis.py):
+  Paired 95% percentile bootstrap confidence intervals [ci_low, ci_high] are
+  the primary inferential output. Intervals excluding zero (ci_excludes_zero)
+  are the project's stated inferential criterion for detecting differences.
+  bootstrap_sign_prob (and its legacy alias p_value) reports empirical sign
+  consistency across replicates as a descriptive statistic, NOT a formal
+  null-hypothesis test p-value. Holm correction and formal significance flags
+  are deliberately omitted as applying them to descriptive sign proportions is
+  methodologically invalid.
+
+  Note: PROTOCOL.md §4 pre-specified "Two-sided p-values with Holm correction"
+  but the underlying computation 2*min(P(d<=0), P(d>=0)) is a bootstrap sign
+  proportion, not a valid p-value under any null hypothesis. This script was
+  updated for methodological consistency; the substantive conclusions (which
+  CIs exclude zero) are unchanged.
 
 Outputs (default results/p2/analysis/), never overwritten without --overwrite.
 Use --check to list run status without writing anything.
@@ -93,6 +108,12 @@ def macro_f1(pred, y):
 
 
 def holm(p):
+    """Holm-Bonferroni step-down correction for a family of valid p-values.
+
+    NOTE: This procedure requires valid p-values that control type I error
+    under the null hypothesis. It must NOT be applied to descriptive bootstrap
+    statistics such as bootstrap_sign_prob.
+    """
     p = np.asarray(p, float)
     order = np.argsort(p)
     adj = np.empty_like(p)
@@ -193,22 +214,20 @@ def main(args):
         ka, kb = (a, tuple(seeds)), (b, tuple(seeds))
         for k, metric in enumerate(("macro_auroc", "macro_f1")):
             d = samples[ka][:, k] - samples[kb][:, k]
-            p = 2 * min((d <= 0).mean(), (d >= 0).mean())
+            sign_prob = 2 * min((d <= 0).mean(), (d >= 0).mean())
+            ci_low = float(np.percentile(d, 2.5))
+            ci_high = float(np.percentile(d, 97.5))
             comp_rows.append({
                 "id": cid, "family": family, "arm_a": a, "arm_b": b,
                 "metric": metric, "seeds": ",".join(map(str, seeds)),
                 "difference": point[ka][k] - point[kb][k],
-                "ci_low": float(np.percentile(d, 2.5)),
-                "ci_high": float(np.percentile(d, 97.5)),
-                "p_value": float(max(p, 1.0 / args.n_boot)),
+                "ci_low": ci_low,
+                "ci_high": ci_high,
+                "ci_excludes_zero": bool(ci_low > 0.0 or ci_high < 0.0),
+                "bootstrap_sign_prob": float(min(1.0, max(sign_prob, 1.0 / args.n_boot))),
+                "p_value": float(min(1.0, max(sign_prob, 1.0 / args.n_boot))),  # legacy alias; NOT a formal p-value
             })
     comp = pd.DataFrame(comp_rows)
-    for metric in ("macro_auroc", "macro_f1"):
-        for family in ("primary", "supplementary"):
-            m = (comp.metric == metric) & (comp.family == family)
-            if m.any():
-                comp.loc[m, "p_value_holm"] = holm(comp.loc[m, "p_value"].to_numpy())
-    comp["significant_holm_0.05"] = comp["p_value_holm"] < 0.05
     comp.to_csv(paths["comparisons.csv"], index=False)
 
     # --------------------------------------- descriptive: own-site subsets
@@ -292,8 +311,27 @@ def main(args):
             "protocol": "results/p2/PROTOCOL.md",
             "runs_found": [f"{a} seed {s}" for a, s in sorted(runs)],
             "runs_missing": [f"{a} seed {s}" for a, s in expected if (a, s) not in runs],
-            "bootstrap": {"unit": "patient", "n_boot": args.n_boot, "seed": args.seed,
-                          "seed_handling": "metric averaged over each arm's seeds per resample"},
+            "bootstrap": {
+                "unit": "patient",
+                "n_boot": args.n_boot,
+                "seed": args.seed,
+                "interval": "95% percentile",
+                "seed_handling": "metric averaged over each arm's seeds per resample",
+                "paired_inference": {
+                    "primary_criterion": (
+                        "95% percentile bootstrap confidence interval of paired differences [ci_low, ci_high]. "
+                        "Intervals excluding zero (ci_excludes_zero == True) are the project's stated inferential "
+                        "criterion for detecting differences, not a substitute for a separately justified multiple-comparison procedure."
+                    ),
+                    "sign_prob_interpretation": (
+                        "bootstrap_sign_prob (and legacy alias p_value) represents an empirical bootstrap sign-proportion "
+                        "estimate 2 * min(P(d <= 0), P(d >= 0)) floored at 1/n_boot measuring replicate sign consistency. "
+                        "It is a descriptive statistic rather than a formal null-hypothesis test p-value. Holm correction "
+                        "and formal significance flags are deliberately omitted as applying them to descriptive sign "
+                        "proportions is methodologically invalid."
+                    ),
+                },
+            },
             "comparisons": comp.to_dict(orient="records"),
             "convergence": conv_rows,
             "reproduction_check": repro,

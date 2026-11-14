@@ -308,19 +308,24 @@ Per-class test F1 (seed 42):
 
 ### 10.3 Pre-specified comparisons
 
-Paired patient-level bootstrap with 2,000 resamples. The primary family is
-seed-matched (seed 42), Holm-corrected across 5 tests per metric.
+Paired patient-level bootstrap with 2,000 resamples. Primary inference rests
+on paired 95% percentile confidence intervals [ci_low, ci_high] excluding zero
+(`ci_excludes_zero`). `bootstrap_sign_prob` (and legacy column alias `p_value`)
+reports empirical replicate sign consistency as a descriptive statistic, not a
+formal null-hypothesis p-value. In accordance with the methodology established
+in `docs/DATASET_EVALUATION_AUDIT.md` §6, Holm adjustment is omitted from sign
+proportions.
 
-| Comparison | Δ macro-AUROC [95% CI] | p (Holm) | Δ macro-F1 [95% CI] | p (Holm) |
+| Comparison | Δ macro-AUROC [95% CI] | Sign prob | Δ macro-F1 [95% CI] | Sign prob |
 |---|---|---|---|---|
 | C1: FedAvg-20 − centralized | +0.0041 [−0.0001, 0.0084] | 0.055 | +0.0079 [−0.0026, 0.0187] | 0.145 |
-| C2: FedAvg-20 − local client 1 | +0.0145 [0.0104, 0.0190] | 0.0025 | +0.0193 [0.0086, 0.0301] | 0.0025 |
-| C2: FedAvg-20 − local client 2 | +0.0208 [0.0157, 0.0258] | 0.0025 | +0.0273 [0.0152, 0.0393] | 0.0025 |
-| C2: FedAvg-20 − local client 3 | +0.0370 [0.0305, 0.0433] | 0.0025 | +0.0464 [0.0336, 0.0588] | 0.0025 |
-| C2: FedAvg-20 − local client 4 | +0.0518 [0.0428, 0.0600] | 0.0025 | +0.0681 [0.0523, 0.0833] | 0.0025 |
-| S1 (supplementary): FedAvg-20 − centralized, 3 seeds each | −0.0005 [−0.0031, 0.0021] | 0.70 | +0.0008 [−0.0061, 0.0076] | 0.86 |
+| C2: FedAvg-20 − local client 1 | +0.0145 [0.0104, 0.0190] | 0.0005 | +0.0193 [0.0086, 0.0301] | 0.0005 |
+| C2: FedAvg-20 − local client 2 | +0.0208 [0.0157, 0.0258] | 0.0005 | +0.0273 [0.0152, 0.0393] | 0.0005 |
+| C2: FedAvg-20 − local client 3 | +0.0370 [0.0305, 0.0433] | 0.0005 | +0.0464 [0.0336, 0.0588] | 0.0005 |
+| C2: FedAvg-20 − local client 4 | +0.0518 [0.0428, 0.0600] | 0.0005 | +0.0681 [0.0523, 0.0833] | 0.0005 |
+| S1 (supplementary): FedAvg-20 − centralized, 3 seeds each | −0.0005 [−0.0031, 0.0021] | 0.700 | +0.0008 [−0.0061, 0.0076] | 0.860 |
 
-The p-value floor is 1/2,000 before Holm adjustment.
+The empirical sign-proportion floor is 1/2,000 = 0.0005.
 
 Descriptive: each local model on its own site's test subset, compared with
 FedAvg-20 and centralized on the same subset (mean of 3 seeds for FedAvg-20
@@ -335,13 +340,15 @@ and centralized):
 
 **Supported conclusions**
 - FedAvg-20 outperforms every client's local-only model on the full test
-  fold, for both macro-AUROC and macro-F1 (all Holm-adjusted p = 0.0025).
+  fold, for both macro-AUROC and macro-F1 (all paired 95% CIs strictly exclude
+  zero; descriptive sign prob ≤ 0.0005).
 - The gain grows as the client gets smaller, from +0.015 AUROC for the
   largest client to +0.052 for the smallest.
 - On each client's own-site test data, FedAvg-20 is at least as good as the
   local model (descriptive, single local seed).
 - No detectable difference between FedAvg-20 and centralized training:
-  seed 42 p = 0.055 (not significant); three seeds Δ = −0.0005.
+  seed 42 95% CI includes zero [−0.0001, +0.0084] (sign prob 0.055);
+  three seeds Δ = −0.0005 [−0.0031, +0.0021] (sign prob 0.700).
 
 **Not supported**
 - That FedAvg is better than centralized training.

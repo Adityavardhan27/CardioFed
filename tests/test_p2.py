@@ -51,3 +51,22 @@ def test_global_norm_dataset_alignment():
     with open(f"{d}/norm_stats.json") as f:
         stats = json.load(f)
     assert stats["samples_per_lead"] == int((folds <= 8).sum()) * 1000
+
+
+def test_p2_statistical_methodology_consistency():
+    """Verify that p2_analysis does not apply Holm correction to descriptive sign proportions."""
+    import inspect
+    from src import p2_analysis
+
+    src_code = inspect.getsource(p2_analysis.main)
+    # Must NOT apply Holm to p_value or create significance flags
+    assert 'comp.loc[m, "p_value_holm"]' not in src_code
+    assert "significant_holm_0.05" not in src_code
+    # Must compute and output ci_excludes_zero and bootstrap_sign_prob
+    assert "ci_excludes_zero" in src_code
+    assert "bootstrap_sign_prob" in src_code
+
+    # holm function docstring must explicitly warn against descriptive statistics
+    holm_doc = inspect.getdoc(p2_analysis.holm)
+    assert "must NOT be applied to descriptive bootstrap" in holm_doc
+
