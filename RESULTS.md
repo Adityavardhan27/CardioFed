@@ -217,7 +217,7 @@ or point estimates for deterministic conditions (seed 0).
 ### 6.4 Key findings and statistical conclusions
 
 1. **Noise and Baseline Wander:**
-   - Realisation seed variability is minimal ($\sigma_{\text{seed}} \le 0.0007$ for noise, $\le 0.002$ for wander), indicating that single-realisation estimates were not anomalous.
+   - Realisation seed variability is minimal ($\sigma_{\text{seed}} \le 0.00075$ for noise, $\le 0.002$ for wander), indicating that single-realisation estimates were not anomalous.
    - For mild baseline wander (amplitude 0.5), 95% paired bootstrap CIs for $\Delta_{\text{AUROC}}$ span zero across all models (e.g. multiscale: $-0.0003$ [$-0.0007, +0.0001$], $p = 0.144$), confirming that the 0.5 Hz high-pass Butterworth filter effectively removes low-frequency wander.
    - At high amplitude wander (2.0) and severe noise ($\sigma = 0.5$), AUROC decreases by $-0.006$ to $-0.012$ (95% CIs exclude zero). Macro-F1 degrades substantially (dropping to $0.605 - 0.643$) because fixed validation thresholds become miscalibrated under elevated variance.
 2. **Missing Lead Subsets:**
@@ -225,7 +225,10 @@ or point estimates for deterministic conditions (seed 0).
    - Single-lead evaluation demonstrates severe degradation: Lead I yields macro-AUROC $0.606 - 0.664$; Lead II yields $0.592 - 0.684$. In both single-lead scenarios, macro-F1 collapses to $0.170 - 0.308$.
 3. **Flatline (All-12-Leads-Zero):**
    - Setting all 12 leads to zero yields macro-AUROC of exactly $0.5000$ across all models ($\Delta_{\text{AUROC}} \approx -0.407$, 95% CIs $[-0.416, -0.397]$).
-   - Because the zero baseline maps to positive output logits for STTC and HYP, the models predict STTC and HYP for 100% of flatline records, collapsing macro-F1 to $0.119 - 0.275$. The app flatline warning remains clinically essential.
+   - Because the zero baseline produces constant positive output logits exceeding frozen thresholds:
+     - The Baseline 1D CNN predicts MI, STTC, CD, and HYP positive for 100% of flatline records (4 out of 5 classes).
+     - Multi-Scale CNN and FedAvg-8 predict STTC and HYP positive for 100% of flatline records (2 out of 5 classes).
+     - This broader false-positive pattern accounts for the baseline's higher flatline macro-F1 (0.275 vs 0.119 for multiscale and FedAvg-8). The app flatline warning remains clinically essential.
 4. **Non-linear Amplitude Clipping:**
    - Mild clipping at $\pm 2.5\,\text{std}$ produces modest AUROC drops ($-0.006$ to $-0.009$, 95% CIs strictly negative).
    - Severe clipping at $\pm 1.5\,\text{std}$ significantly distorts waveform morphology, degrading AUROC by $-0.019$ to $-0.029$ and collapsing macro-F1 to $0.517 - 0.609$.
