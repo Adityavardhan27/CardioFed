@@ -161,22 +161,32 @@ In `src/statistical_analysis.py`, confidence intervals are estimated using a non
 - `patient_bootstrap_indices` groups records by `patient_id` and samples unique patient IDs with replacement. All records belonging to a sampled patient are included.
 - Verified in `tests/test_dataset_audit.py::test_patient_bootstrap_clustering`.
 
-### 6.2 Paired Model Comparisons
+### 6.2 Paired Model Comparisons & Inference Procedure
 To compare models $A$ and $B$:
-- Predictions for both models are computed on the identical bootstrap sample of patients:
+- Predictions for both models are evaluated on identical unconditional bootstrap samples of patients:
   $$d_b = \text{Metric}(A, \text{sample}_b) - \text{Metric}(B, \text{sample}_b)$$
-- Two-sided empirical p-value is computed:
-  $$p = 2 \cdot \min\left(\frac{1}{B} \sum_{b=1}^B \mathbf{1}(d_b \le 0), \frac{1}{B} \sum_{b=1}^B \mathbf{1}(d_b \ge 0)\right)$$
-  floored at $\frac{1}{B} = 0.0005$.
+- **Primary Inferential Criterion (95% Percentile Confidence Interval):**
+  The primary statistical criterion for inferring a performance difference between models is whether the 95% percentile bootstrap confidence interval $[d_{2.5\%}, d_{97.5\%}]$ strictly excludes 0.0.
+- **Bootstrap Sign-Proportion Estimate (`bootstrap_sign_prob`):**
+  The pipeline also computes:
+  $$p_{\text{sign}} = 2 \cdot \min\left(\frac{1}{B_{\text{valid}}} \sum_{b=1}^{B_{\text{valid}}} \mathbf{1}(d_b \le 0), \frac{1}{B_{\text{valid}}} \sum_{b=1}^{B_{\text{valid}}} \mathbf{1}(d_b \ge 0)\right)$$
+  floored at $\frac{1}{B_{\text{valid}}}$.
+  *Methodological Distinction:* In `src/statistical_analysis.py`, this quantity is designated as `bootstrap_sign_prob` (with `p_value` retained as an alias for backwards compatibility). It is a descriptive bootstrap sign-proportion estimate measuring the consistency of metric difference direction across resamples, rather than a formal hypothesis-test p-value derived under an exchangeable null hypothesis $H_0: \theta_A = \theta_B$ (such as from a permutation test or pivotal bootstrap). Formal statistical significance claims must not be asserted from this sign proportion alone; substantive claims of difference rest on the paired 95% confidence intervals.
+- **Safe Handling of Zero Valid Replicates:**
+  If a paired comparison has zero valid replicates ($B_{\text{valid}} = 0$, e.g., on a small sub-cohort where a diagnostic class was completely unobserved), `ci_low`, `ci_high`, and `bootstrap_sign_prob` evaluate to `NaN`.
 
 ### 6.3 Multiple-Comparison Correction (Holm-Bonferroni)
-`src/statistical_analysis.py::holm` implements the Holm-Bonferroni step-down procedure:
-1. Sort $m$ unadjusted p-values: $p_{(1)} \le p_{(2)} \le \dots \le p_{(m)}$.
-2. Compute adjusted values:
+`src/statistical_analysis.py::holm` implements the Holm-Bonferroni step-down procedure with safe handling of undefined (`NaN`) p-values:
+1. Filter the input vector for finite values: $m = \sum \mathbf{1}(\text{isfinite}(p_i))$.
+   - Undefined comparisons with zero valid replicates ($p = \text{NaN}$) do not contaminate the ranking, do not inflate the family size $m$, and remain `NaN` in the adjusted output.
+2. If $m > 0$, sort the $m$ valid unadjusted values: $p_{(1)} \le p_{(2)} \le \dots \le p_{(m)}$.
+3. Compute adjusted values:
    $$\tilde{p}_{(k)} = \min(1, (m - k + 1) \cdot p_{(k)})$$
-3. Enforce monotonicity:
+4. Enforce step-down monotonicity:
    $$\tilde{p}_{(k)} = \max(\tilde{p}_{(k-1)}, \tilde{p}_{(k)})$$
-### 6.4 Assessment of Rejection Sampling vs. Unconditional Patient Bootstrap
+5. Map adjusted values back to their original positions; comparisons with `NaN` p-values receive `NaN` for `p_value_holm` and evaluate `significant_at_0.05_holm = False`.
+
+### 6.4 Assessment of Rejection Sampling vs. Unconditional Patient Bootstrap & Validity Reporting
 When evaluating confidence intervals for multi-label classification using patient-level bootstrap:
 - **Statistical Critique of Rejection-Based Bootstrap:**
   Conditioning bootstrap draws on having $\ge 1$ positive and $\ge 1$ negative example for every class (rejection sampling) truncates the empirical sampling distribution. For a low-prevalence class with true prevalence $p$, observing 0 cases in a sample has non-zero probability under sampling variability ($P(K=0) = (1-p)^N > 0$). Discarding samples with 0 positives artificially truncates the lower tail of class prevalence, shifts the effective conditional prevalence upward, and artificially compresses the confidence intervals for rare conditions.
@@ -184,12 +194,14 @@ When evaluating confidence intervals for multi-label classification using patien
   1. **Unconditional Patient-Level Resampling:** `patient_bootstrap_indices` samples patient clusters uniformly with replacement without rejection, strictly preserving patient clustering and empirical sampling variance.
   2. **Consistent Complete-Class Definition for Macro-AUROC:**
      To prevent partial-class averages from distorting macro-AUROC comparisons between models (e.g. omitting HYP would artificially inflate macro-AUROC from ~0.906 to ~0.930), macro-AUROC is strictly defined as the mean over all 5 pre-specified target superclasses. If a bootstrap replicate misses any class, its 5-class macro-AUROC is recorded as undefined (`NaN`). Single-model macro-AUROC CIs and paired model macro-AUROC differences are computed only over consistent replicates where all target classes are evaluated.
-  3. **Transparent Undefined Replicate Reporting:**
-     Every evaluation table (`overall_with_ci.csv`, `per_class_with_ci.csv`, and `paired_differences.csv`) and `bootstrap_summary.json` explicitly outputs:
-     - `valid_bootstrap_samples`: Count of replicates where all required classes were present.
-     - `excluded_bootstrap_samples`: Count of replicates excluded due to missing class representation.
-     On the full PTB-XL fold-10 test set ($N=2,157$ records, $1,876$ patients, minimum class support $n=262$), all 2,000 bootstrap replicates have all 5 classes present (`valid_bootstrap_samples = 2000`, `excluded_bootstrap_samples = 0`). For small subgroup cohorts, the reporting transparently exposes sample coverage without inducing rejection bias.
-  4. **Regression Tests:** Verified in `tests/test_dataset_audit.py` (`test_macro_auc_returns_nan_on_incomplete_classes` and `test_bootstrap_transparent_exclusion_tracking`).
+  3. **Distinct Reporting of AUROC and F1 Replicate Validity:**
+     Every output table and `bootstrap_summary.json` provides transparent, explicit validity accounting:
+     - **Macro-AUROC Replicates (`macro_auroc_valid_samples`, `macro_auroc_excluded_samples`):** Explicitly tracks complete 5-class macro-AUROC replicates where all 5 classes are biclassed.
+     - **Per-Class AUROC Replicates (`auroc_valid_samples`, `auroc_excluded_samples`):** Explicitly tracks replicates where that specific diagnostic class has both $\ge 1$ positive and $\ge 1$ negative example.
+     - **F1 Replicates (`macro_f1_valid_samples`, `f1_valid_samples`):** Explicitly tracked separately. F1 is evaluable across all replicates because zero-division in precision/recall defaults to 0.0 under single-outcome distributions.
+     - **Legacy Aliases:** `valid_bootstrap_samples` and `excluded_bootstrap_samples` are retained in output CSVs for backward compatibility with downstream evaluation scripts.
+     On the full PTB-XL fold-10 test set ($N=2,157$ records, $1,876$ patients, minimum class support $n=262$), all 2,000 bootstrap replicates have all 5 classes present (`macro_auroc_valid_samples = 2000`, `macro_auroc_excluded_samples = 0`). For small subgroup cohorts, the reporting transparently exposes sample coverage without inducing rejection bias.
+  4. **Regression Tests:** Verified in `tests/test_dataset_audit.py` (`test_macro_auc_returns_nan_on_incomplete_classes`, `test_bootstrap_transparent_exclusion_tracking`, `test_holm_handles_nan_pvalues_safely`, `test_zero_valid_replicate_paired_comparison_safety`, and `test_validity_counts_distinguish_auroc_and_f1`).
 
 ---
 

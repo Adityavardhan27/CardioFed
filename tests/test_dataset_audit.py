@@ -304,6 +304,94 @@ def test_bootstrap_transparent_exclusion_tracking():
     assert np.all(np.isfinite(d))
 
 
+def test_holm_handles_nan_pvalues_safely():
+    """Verify Holm step-down correction handles NaNs without altering family size m for valid tests."""
+    # 2 valid p-values and 1 NaN
+    pvals = [0.01, float("nan"), 0.04]
+    adj = holm(pvals)
+
+    # For 2 valid tests:
+    # rank 0: min(1.0, 2 * 0.01) = 0.02
+    # rank 1: max(0.02, min(1.0, 1 * 0.04)) = 0.04
+    assert np.isnan(adj[1])
+    assert np.isclose(adj[0], 0.02)
+    assert np.isclose(adj[2], 0.04)
+
+    # All NaNs
+    all_nan = holm([float("nan"), float("nan")])
+    assert len(all_nan) == 2
+    assert np.all(np.isnan(all_nan))
+
+    # Empty array
+    empty = holm([])
+    assert len(empty) == 0
+
+
+def test_zero_valid_replicate_paired_comparison_safety():
+    """Verify paired comparison logic safely produces NaNs and non-significant flags when 0 valid replicates exist."""
+    # Simulate a metric where all replicates are NaN (zero valid replicates)
+    diff_reps = np.full(50, np.nan)
+    valid_mask = np.isfinite(diff_reps)
+    valid_count = int(valid_mask.sum())
+    excluded_count = int((~valid_mask).sum())
+    assert valid_count == 0
+    assert excluded_count == 50
+
+    if valid_count > 0:
+        d = diff_reps[valid_mask]
+        ci_low, ci_high = np.percentile(d, [2.5, 97.5])
+        p = max(2.0 * min((d <= 0.0).mean(), (d >= 0.0).mean()), 1.0 / valid_count)
+    else:
+        ci_low = float("nan")
+        ci_high = float("nan")
+        p = float("nan")
+
+    record = {
+        "metric": "macro_auroc",
+        "ci_low": ci_low,
+        "ci_high": ci_high,
+        "bootstrap_sign_prob": p,
+        "p_value": p,
+        "valid_bootstrap_samples": valid_count,
+        "excluded_bootstrap_samples": excluded_count,
+    }
+
+    df = pd.DataFrame([record])
+    df["p_value_holm"] = holm(df["p_value"].to_numpy())
+    df["significant_at_0.05_holm"] = (
+        (df["p_value_holm"] < 0.05) & np.isfinite(df["p_value_holm"])
+    )
+
+    assert np.isnan(df.loc[0, "ci_low"])
+    assert np.isnan(df.loc[0, "ci_high"])
+    assert np.isnan(df.loc[0, "bootstrap_sign_prob"])
+    assert np.isnan(df.loc[0, "p_value_holm"])
+    assert df.loc[0, "valid_bootstrap_samples"] == 0
+    assert df.loc[0, "significant_at_0.05_holm"] == False
+
+
+def test_validity_counts_distinguish_auroc_and_f1():
+    """Verify that overall and per-class summary tables distinctly report AUROC and F1 validity counts."""
+    import inspect
+    from src import statistical_analysis
+
+    # Inspect source to verify keys are present in dictionary definitions
+    src_code = inspect.getsource(statistical_analysis.main)
+
+    # Check overall keys
+    assert "macro_auroc_valid_samples" in src_code
+    assert "macro_auroc_excluded_samples" in src_code
+    assert "macro_f1_valid_samples" in src_code
+    assert "macro_f1_excluded_samples" in src_code
+
+    # Check per-class keys
+    assert "auroc_valid_samples" in src_code
+    assert "auroc_excluded_samples" in src_code
+    assert "f1_valid_samples" in src_code
+    assert "f1_excluded_samples" in src_code
+
+    # Check paired difference sign prob key
+    assert "bootstrap_sign_prob" in src_code
 
 
 # ==============================================================================

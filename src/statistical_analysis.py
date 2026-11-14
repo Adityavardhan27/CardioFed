@@ -67,14 +67,24 @@ def per_class_f1(pred, y):
 
 
 def holm(pvalues):
-    order = np.argsort(pvalues)
-    m = len(pvalues)
-    adjusted = np.empty(m)
+    pvalues = np.asarray(pvalues, dtype=float)
+    adjusted = np.full_like(pvalues, np.nan)
+    valid_mask = np.isfinite(pvalues)
+    if not np.any(valid_mask):
+        return adjusted
+
+    valid_p = pvalues[valid_mask]
+    m = len(valid_p)
+    order = np.argsort(valid_p)
     running = 0.0
+    valid_adjusted = np.empty(m)
     for rank, i in enumerate(order):
-        running = max(running, min(1.0, (m - rank) * pvalues[i]))
-        adjusted[i] = running
+        running = max(running, min(1.0, (m - rank) * valid_p[i]))
+        valid_adjusted[i] = running
+
+    adjusted[valid_mask] = valid_adjusted
     return adjusted
+
 
 
 def patient_bootstrap_indices(patients, n_boot, seed):
@@ -188,8 +198,12 @@ def main(args):
             "model": n, "label": MODELS[n]["label"],
             "macro_auroc": point["macro_auroc"],
             "macro_auroc_ci_low": lo_a, "macro_auroc_ci_high": hi_a,
+            "macro_auroc_valid_samples": val_a,
+            "macro_auroc_excluded_samples": exc_a,
             "macro_f1": point["macro_f1"],
             "macro_f1_ci_low": lo_f, "macro_f1_ci_high": hi_f,
+            "macro_f1_valid_samples": val_f,
+            "macro_f1_excluded_samples": exc_f,
             "hamming_loss": point["hamming_loss"],
             "subset_accuracy": point["subset_accuracy"],
             "valid_bootstrap_samples": val_a,
@@ -204,9 +218,13 @@ def main(args):
                 "auroc": point["per_class_auroc"][c],
                 "auroc_ci_low": lo_ca,
                 "auroc_ci_high": hi_ca,
+                "auroc_valid_samples": val_ca,
+                "auroc_excluded_samples": exc_ca,
                 "f1": point["per_class_f1"][c],
                 "f1_ci_low": lo_cf,
                 "f1_ci_high": hi_cf,
+                "f1_valid_samples": val_cf,
+                "f1_excluded_samples": exc_cf,
                 "precision": point["per_class_precision"][c],
                 "recall": point["per_class_recall"][c],
                 "support": point["per_class_support"][c],
@@ -239,6 +257,7 @@ def main(args):
                 "metric": metric, "difference": point_a - point_b,
                 "ci_low": ci_low,
                 "ci_high": ci_high,
+                "bootstrap_sign_prob": p,
                 "p_value": p,
                 "valid_bootstrap_samples": valid_count,
                 "excluded_bootstrap_samples": excluded_count,
@@ -247,7 +266,9 @@ def main(args):
     for metric in ("macro_auroc", "macro_f1"):
         mask = diffs["metric"] == metric
         diffs.loc[mask, "p_value_holm"] = holm(diffs.loc[mask, "p_value"].to_numpy())
-    diffs["significant_at_0.05_holm"] = diffs["p_value_holm"] < 0.05
+    diffs["significant_at_0.05_holm"] = (
+        (diffs["p_value_holm"] < 0.05) & np.isfinite(diffs["p_value_holm"])
+    )
 
     pd.DataFrame(overall).to_csv(outputs[0], index=False)
     pd.DataFrame(per_class).to_csv(outputs[1], index=False)
@@ -262,9 +283,19 @@ def main(args):
             "seed": args.seed,
             "interval": "95% percentile",
             "policy": "unconditional cluster bootstrap with complete-class consistency for macro-AUROC and transparent reporting of undefined replicates",
+            "validity_definitions": {
+                "macro_auroc_replicate": "Requires all 5 diagnostic superclasses to be biclassed (>=1 positive and >=1 negative example) in the replicate.",
+                "per_class_auroc_replicate": "Requires that specific class to be biclassed in the replicate.",
+                "f1_replicate": "Defined for all replicates since F1 is evaluable under single-outcome distributions (precision/recall zero-division=0).",
+            },
+            "paired_inference": {
+                "primary_criterion": "95% percentile bootstrap confidence interval of paired differences [ci_low, ci_high]. Claims of difference require this interval to exclude 0.0.",
+                "sign_prob_interpretation": "bootstrap_sign_prob (and p_value) represents an empirical bootstrap sign-proportion estimate 2 * min(P(d <= 0), P(d >= 0)) floored at 1/n_valid measuring replicate sign consistency. It is a descriptive statistic rather than a formal null-hypothesis test p-value.",
+                "zero_valid_handling": "Comparisons with 0 valid replicates yield NaN for CI and sign-probability, receive NaN for Holm-adjusted values, and do not penalize the family size m of testable hypotheses.",
+            },
         },
         "thresholds": "validation-tuned thresholds from each original evaluation JSON",
-        "p_value_floor": f"p-values are floored at 1/n_boot = {1.0 / args.n_boot}",
+        "p_value_floor": f"sign-proportion estimates are floored at 1/n_valid = {1.0 / args.n_boot}",
         "reproduction_max_abs_diff": reproduced,
         "overall": overall,
         "paired_differences": diffs.to_dict(orient="records"),
