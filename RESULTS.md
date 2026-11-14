@@ -229,8 +229,10 @@ performance.
 ## 10. P2 experiments: local-only baselines, longer FedAvg, extra seeds
 
 The protocol was fixed and committed before training
-(`results/p2/PROTOCOL.md`, including all deviations). Outputs are in
-`results/p2/`; analysis in `results/p2/analysis/`.
+(`results/p2/PROTOCOL.md`, including all deviations). Authoritative corrected
+analysis outputs are in `results/p2/analysis_corrected/` (`comparisons.csv`,
+`summary.json`, etc.); the original outputs in `results/p2/analysis/` are
+retained as historical artifacts (see PROTOCOL.md §7 deviation 5).
 
 Common settings:
 - All models use the multi-scale CNN with the standard data and labels.
@@ -256,7 +258,7 @@ Common settings:
 - Seed 42, rounds 1–8, reproduces the original 8-round run bit for bit
   (validation AUROC and all client losses identical).
 
-Figure: `results/p2/analysis/fedavg_convergence.png`.
+Figure: `results/p2/analysis_corrected/fedavg_convergence.png` (historical: `results/p2/analysis/`).
 
 ### 10.2 Test results (fold 10)
 
@@ -308,22 +310,30 @@ Per-class test F1 (seed 42):
 
 ### 10.3 Pre-specified comparisons
 
-Paired patient-level bootstrap with 2,000 resamples. Primary inference rests
-on paired 95% percentile confidence intervals [ci_low, ci_high] excluding zero
-(`ci_excludes_zero`). `bootstrap_sign_prob` (and legacy column alias `p_value`)
-reports empirical replicate sign consistency as a descriptive statistic, not a
-formal null-hypothesis p-value. In accordance with the methodology established
-in `docs/DATASET_EVALUATION_AUDIT.md` §6, Holm adjustment is omitted from sign
-proportions.
+Paired patient-level bootstrap with 2,000 resamples. Results below are from the
+authoritative corrected analysis (`results/p2/analysis_corrected/comparisons.csv`);
+the original files in `results/p2/analysis/` containing invalid Holm adjustments
+on descriptive sign proportions are retained as historical artifacts (see
+`results/p2/PROTOCOL.md` §7 deviation 5).
+
+Primary uncertainty estimates are unadjusted paired 95% percentile confidence
+intervals [ci_low, ci_high] with `ci_excludes_zero` indicating whether an interval
+excludes zero. `bootstrap_sign_prob` (and legacy column alias `p_value`) reports
+empirical replicate sign consistency as a descriptive statistic, not a formal
+null-hypothesis test p-value. In accordance with `docs/DATASET_EVALUATION_AUDIT.md` §6,
+Holm adjustment is omitted from sign proportions. Crucially, unadjusted paired
+confidence intervals do not provide family-wise error rate (FWER) control across
+multiple comparisons, and must not be interpreted as family-wise controlled
+hypothesis tests.
 
 | Comparison | Δ macro-AUROC [95% CI] | Sign prob | Δ macro-F1 [95% CI] | Sign prob |
 |---|---|---|---|---|
 | C1: FedAvg-20 − centralized | +0.0041 [−0.0001, 0.0084] | 0.055 | +0.0079 [−0.0026, 0.0187] | 0.145 |
-| C2: FedAvg-20 − local client 1 | +0.0145 [0.0104, 0.0190] | 0.0005 | +0.0193 [0.0086, 0.0301] | 0.0005 |
+| C2: FedAvg-20 − local client 1 | +0.0145 [0.0104, 0.0190] | 0.0005 | +0.0193 [0.0086, 0.0301] | 0.0010 |
 | C2: FedAvg-20 − local client 2 | +0.0208 [0.0157, 0.0258] | 0.0005 | +0.0273 [0.0152, 0.0393] | 0.0005 |
 | C2: FedAvg-20 − local client 3 | +0.0370 [0.0305, 0.0433] | 0.0005 | +0.0464 [0.0336, 0.0588] | 0.0005 |
 | C2: FedAvg-20 − local client 4 | +0.0518 [0.0428, 0.0600] | 0.0005 | +0.0681 [0.0523, 0.0833] | 0.0005 |
-| S1 (supplementary): FedAvg-20 − centralized, 3 seeds each | −0.0005 [−0.0031, 0.0021] | 0.700 | +0.0008 [−0.0061, 0.0076] | 0.860 |
+| S1 (supplementary): FedAvg-20 − centralized, 3 seeds each | −0.0005 [−0.0031, 0.0021] | 0.698 | +0.0008 [−0.0061, 0.0076] | 0.856 |
 
 The empirical sign-proportion floor is 1/2,000 = 0.0005.
 
@@ -339,18 +349,23 @@ and centralized):
 | 4 (other sites, n = 210) | 0.874 | 0.919 | 0.927 |
 
 **Supported conclusions**
-- FedAvg-20 outperforms every client's local-only model on the full test
-  fold, for both macro-AUROC and macro-F1 (all paired 95% CIs strictly exclude
-  zero; descriptive sign prob ≤ 0.0005).
-- The gain grows as the client gets smaller, from +0.015 AUROC for the
+- Unadjusted paired 95% bootstrap confidence intervals for FedAvg-20 minus each
+  local-only model strictly exclude zero for both macro-AUROC and macro-F1
+  (descriptive sign prob <= 0.001), indicating consistent observed test-fold
+  performance advantages when federating across all clients.
+- The observed gain grows as the client gets smaller, from +0.015 AUROC for the
   largest client to +0.052 for the smallest.
 - On each client's own-site test data, FedAvg-20 is at least as good as the
   local model (descriptive, single local seed).
 - No detectable difference between FedAvg-20 and centralized training:
-  seed 42 95% CI includes zero [−0.0001, +0.0084] (sign prob 0.055);
-  three seeds Δ = −0.0005 [−0.0031, +0.0021] (sign prob 0.700).
+  seed 42 95% CI spans zero [−0.0001, +0.0084] (sign prob 0.055);
+  three seeds Δ = −0.0005 [−0.0031, +0.0021] (sign prob 0.698).
 
 **Not supported**
+- Formal family-wise statistical significance across the family of C2
+  comparisons, as unadjusted confidence intervals do not control family-wise
+  error rate and no valid multiple-testing procedure was established for sign
+  proportions.
 - That FedAvg is better than centralized training.
 - Any privacy guarantee.
 - Local-only seed variability, since only one seed was run per client.
