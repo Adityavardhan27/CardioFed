@@ -72,8 +72,9 @@ within each metric):
 - The multi-scale architecture shows no measurable advantage over the
   simpler baseline CNN.
 
-FedAvg-8 had not fully converged. The converged 20-round FedAvg, three
-seeds per arm, and local-only baselines are in Section 10.
+FedAvg-8 was stopped at round 8 prior to reaching its validation plateau.
+The supplementary three-seed 20-round continuation (FedAvg-20), reaching an
+empirical validation plateau at rounds 13–14, is reported in Section 10.
 
 **Not supported:** any claim that one of baseline, multiscale or
 federated_r8 is "best". (The original `results/comparison/comparison_summary.json`
@@ -106,17 +107,28 @@ Heterogeneity is mainly in quantity (7.7× between largest and smallest
 client) and recording site. Label skew is mild: NORM prevalence is 42–44% on
 every client.
 
-Simulation assumptions:
+Simulation assumptions and methodological limitations:
 - Positive-class weights come from pooled training labels.
 - Model selection and threshold tuning use one central validation fold.
-- BatchNorm statistics are averaged.
-- Each client uses a fresh Adam optimiser per round.
+- BatchNorm aggregation limitation: FedAvg directly averages client
+  running_mean and running_var. Simple weighted averaging of within-client
+  variances (sum w_i sigma_i^2) omits the between-client mean contribution to
+  pooled variance (sum w_i (mu_i - mu_bar)^2), and num_batches_tracked is
+  copied from Client 0. This is a methodological limitation, not proof that the
+  reported model results are invalid. Per-record z-score normalization may
+  reduce some input-level distribution differences, but it does not eliminate the
+  BatchNorm aggregation limitation. Its practical impact has not been
+  independently quantified.
+- Optimization differences: Each client initializes a fresh Adam optimizer
+  per round (momentum and second-moment buffers are not preserved across rounds).
+  Centralized multi-scale training used ReduceLROnPlateau, whereas federated
+  training used a fixed learning rate of 5e-4 without a scheduler.
 - No differential privacy or secure aggregation is implemented; no formal
   privacy guarantee is claimed.
 
 Compute is not exactly matched: federated training performed 8 passes over
-the training data, versus 15 epochs (best at 10) for the centralized
-multi-scale model.
+the training data (20 passes in the Section 10 supplementary extension),
+versus 15 epochs (best at 10) for the centralized multi-scale model.
 
 ## 5. Per-site test performance
 
@@ -322,10 +334,18 @@ Common settings:
 | 43 | 13 | 0.9139 | 0.9083 | 0.9117 | +0.0056 |
 | 44 | 14 | 0.9139 | 0.9068 | 0.9100 | +0.0067 |
 
-- Validation macro-AUROC rises until about round 13–14, then plateaus or
-  declines slightly while training loss keeps falling. Running more rounds
-  is therefore not expected to help.
-- The 8-round model reported earlier had not fully converged.
+- FedAvg-20 is a direct continuation of the FedAvg-8 training recipe beyond
+  round 8, using identical client partitions, architecture, batch size, and
+  fixed learning rate (5e-4).
+- Across all three seeds, validation macro-AUROC rises steadily through round 8
+  and peaks at rounds 13–14 (seed 42 round 14: 0.9142; seed 43 round 13: 0.9139;
+  seed 44 round 14: 0.9139).
+- Beyond rounds 13–14, validation macro-AUROC plateaus or slightly declines
+  through round 20 while training loss continues to descend monotonically,
+  representing an empirical validation plateau under this fixed-learning-rate
+  configuration (rather than proof of complete theoretical convergence).
+- The primary 8-round model was stopped prematurely on its initial upward
+  trajectory.
 - Seed 42, rounds 1–8, reproduces the original 8-round run bit for bit
   (validation AUROC and all client losses identical).
 
@@ -346,12 +366,12 @@ Figure: `results/p2/analysis_corrected/fedavg_convergence.png` (historical: `res
 | Local-only client 3 (3,318 rec.) | 42 | 8 | 0.873 | 0.666 | 0.167 | 0.489 |
 | Local-only client 4 (1,003 rec.) | 42 | 10 | 0.858 | 0.644 | 0.167 | 0.492 |
 
-Mean ± SD across seeds:
+Mean ± SD across seeds (evaluating individual seed checkpoints):
 
 | Arm | Macro-AUROC | Macro-F1 |
 |---|---|---|
-| Centralized | 0.910 ± 0.004 | 0.713 ± 0.008 |
-| FedAvg-20 | 0.910 ± 0.001 | 0.714 ± 0.005 |
+| Centralized | 0.9103 ± 0.0037 (0.910 ± 0.004) | 0.7130 ± 0.0079 (0.713 ± 0.008) |
+| FedAvg-20 | 0.9097 ± 0.0009 (0.910 ± 0.001) | 0.7138 ± 0.0051 (0.714 ± 0.005) |
 
 Seed-42 centralized (the primary model in Sections 3–9) was the weakest of
 the three centralized seeds. Seed-to-seed variation (up to 0.007 AUROC) is
@@ -386,6 +406,10 @@ authoritative corrected analysis (`results/p2/analysis_corrected/comparisons.csv
 the original files in `results/p2/analysis/` containing invalid Holm adjustments
 on descriptive sign proportions are retained as historical artifacts (see
 `results/p2/PROTOCOL.md` §7 deviation 5).
+
+In comparison S1 (three seeds), within each bootstrap resample b, individual
+seed metrics are computed on the resampled test patients and averaged across the
+three seeds; model predictions are not ensembled.
 
 Primary uncertainty estimates are unadjusted paired 95% percentile confidence
 intervals [ci_low, ci_high] with `ci_excludes_zero` indicating whether an interval
@@ -430,9 +454,13 @@ and centralized):
   local model (descriptive, single local seed).
 - No detectable difference between FedAvg-20 and centralized training:
   seed 42 95% CI spans zero [−0.0001, +0.0084] (sign prob 0.055);
-  three seeds Δ = −0.0005 [−0.0031, +0.0021] (sign prob 0.698).
+  three-seed average Δ = −0.0005 [−0.0031, +0.0021] (sign prob 0.698).
 
 **Not supported**
+- Formal statistical equivalence or bioequivalence between FedAvg-20 and
+  centralized training: a confidence interval containing zero demonstrates
+  absence of detectable difference, not proven equivalence; no equivalence
+  margin ±δ was pre-specified.
 - Formal family-wise statistical significance across the family of C2
   comparisons, as unadjusted confidence intervals do not control family-wise
   error rate and no valid multiple-testing procedure was established for sign
@@ -440,13 +468,16 @@ and centralized):
 - That FedAvg is better than centralized training.
 - Any privacy guarantee.
 - Local-only seed variability, since only one seed was run per client.
+- Complete theoretical convergence or claims that further training rounds
+  under alternative optimization schedules cannot improve performance.
 
 ## 11. Limitations
 
 1. Local-only baselines have one seed per client. Centralized and FedAvg-20
    have three seeds each. The baseline CNN and FedAvg-3/8 have one.
-2. The baseline CNN (best = last epoch) may not have converged. FedAvg-8 had
-   not converged (see 10.1).
+2. The baseline CNN (best = last epoch) may not have converged. FedAvg-8 was
+   stopped at round 8 prior to the validation plateau observed at rounds 13–14
+   in the supplementary FedAvg-20 run.
 3. Local-only and FedAvg models select checkpoints and thresholds on the
    central validation fold, which a real isolated site would not have.
 4. The test fold was used for several models and analyses. All results are
@@ -457,3 +488,9 @@ and centralized):
 6. Non-standard label policy (Section 1).
 7. Hyper-parameters of the baseline and federated runs other than those
    recorded in history and summary files are assumed to be script defaults.
+8. BatchNorm statistics in FedAvg are directly averaged (weighted running means
+   and variances), omitting the between-client mean contribution to pooled
+   variance, and num_batches_tracked is copied from Client 0.
+9. Optimization schedules differed between centralized training
+   (ReduceLROnPlateau with initial lr 1e-3) and federated training (fixed
+   learning rate of 5e-4 without momentum carryover).

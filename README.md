@@ -12,9 +12,12 @@ Integrated-Gradients explanations, and a Streamlit demo.
 
 **Verified results, limitations and supported conclusions: see
 [RESULTS.md](RESULTS.md).** In short:
-- FedAvg (20 rounds, converging at rounds 13–14) shows no detectable
-  difference from centralized training of the same model (3 seeds each: test
-  macro-AUROC 0.910 vs 0.910).
+- FedAvg-8 (4 clients, 8 rounds, seed 42) is the primary historical federated
+  benchmark; its supplementary extension FedAvg-20 (20 rounds, continuing the
+  same recipe beyond round 8) reached an empirical validation plateau at rounds
+  13–14, achieving test macro-AUROC 0.9097 ± 0.0009 (0.910 ± 0.001) across three
+  seeds with no detectable difference from centralized training (Δ = −0.0005,
+  95% CI [−0.0031, +0.0021]).
 - FedAvg significantly outperforms every client's local-only model, by
   +0.015 to +0.052 macro-AUROC; the gain is largest for the smallest client.
 - The multi-scale CNN shows no measurable advantage over the baseline CNN.
@@ -215,13 +218,24 @@ experiment was dropped from scope.
 dominant recording site: site 0, site 1, site 2, and all other sites. Every
 patient belongs to exactly one client.
 
-FedAvg weights clients by record count. Simulation assumptions (also in the
-script header):
-- class weights come from pooled labels;
-- one central validation fold is used for selection and thresholds;
-- BatchNorm statistics are averaged;
-- each client uses a fresh Adam optimiser per round;
-- there is no differential privacy or secure aggregation.
+FedAvg weights clients by record count. Simulation assumptions and
+methodological limitations (also in the script header):
+- class weights come from pooled training labels;
+- one central validation fold (fold 9) is used for model selection and thresholds;
+- optimization differences: centralized multi-scale training uses
+  ReduceLROnPlateau, whereas federated training uses a fixed learning rate of
+  5e-4 with fresh Adam optimizers created per round (momentum buffers discarded
+  at round boundaries);
+- BatchNorm aggregation limitation: FedAvg directly averages client
+  running_mean and running_var. Simple weighted averaging of within-client
+  variances omits the between-client mean contribution to pooled variance
+  (sum w_i (mu_i - mu_bar)^2), and num_batches_tracked is copied from Client 0.
+  This is a methodological limitation, not proof that the reported model results
+  are invalid; per-record z-score normalization may reduce some input-level
+  distribution differences, but it does not eliminate the BatchNorm aggregation
+  limitation. Its practical impact has not been independently quantified;
+- there is no differential privacy or secure aggregation; no formal privacy
+  guarantee is claimed.
 
 ## 7. Demo app
 
